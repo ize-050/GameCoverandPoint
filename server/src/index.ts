@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "workzone-lightfix-v3",
+    release: "seeker-scan-trace-v1",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );
