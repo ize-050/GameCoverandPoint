@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "office-missions-v1",
+    release: "decoy-camera-v2",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

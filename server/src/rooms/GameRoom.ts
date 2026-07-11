@@ -654,9 +654,8 @@ export class GameRoom extends Room<GameState> {
     this.resolveCatch(client, seeker, nearest);
   }
 
-  // Hider ability: throw a fake "noise" at a random unoccupied cover point,
-  // seen only by seekers — never picks an actually-occupied spot, so it can
-  // never accidentally rat out a hiding teammate.
+  // Visible moving clone. Everyone sees the same fake player, including the
+  // owner, so the item has readable feedback and can genuinely fool seekers.
   private handleDecoy(client: Client, bypassCooldown = false) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught) return;
@@ -666,15 +665,14 @@ export class GameRoom extends Room<GameState> {
     if (!bypassCooldown && now < (this.decoyCooldownUntil.get(client.sessionId) ?? 0)) return;
     if (!bypassCooldown) this.decoyCooldownUntil.set(client.sessionId, now + GAME_CONFIG.DECOY_COOLDOWN_MS);
 
-    const unoccupied = [...this.state.coverPoints.values()].filter((cp) => !cp.isOccupied);
-    const pool = unoccupied.length > 0 ? unoccupied : [...this.state.coverPoints.values()];
-    const target = pool[Math.floor(Math.random() * pool.length)];
-    if (!target) return;
-
-    this.clients.forEach((c) => {
-      if (this.state.players.get(c.sessionId)?.role === "seeker") {
-        c.send("decoyNoise", { x: target.x, y: target.y });
-      }
+    this.broadcast("decoySpawned", {
+      id: `decoy-${client.sessionId}-${now}`,
+      x: player.x,
+      y: player.y,
+      rotY: player.rotY,
+      nickname: player.nickname,
+      characterVariant: player.characterVariant,
+      durationMs: 5000,
     });
   }
 

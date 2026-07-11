@@ -10,6 +10,7 @@ const HELP_HTML = `
   <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
   <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
   <div style="margin-bottom:6px;">E — ทำ Office Mission เมื่ออยู่ที่จุดสีเหลือง</div>
+  <div style="margin-bottom:6px;">C — Hider: สลับกล้องไปดูเพื่อน 4 วินาที</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
     1 2 3 4 — ส่งอีโมจิ
     ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 15 })).join("")}
@@ -193,7 +194,7 @@ export class GameHud {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
     const done = missions.filter((mission) => completed.has(mission.id)).length;
-    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:7px;">OFFICE MISSIONS ${done}/${missions.length}</div>` +
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${done}/${missions.length}</div><div style="color:#94a3b8;margin-bottom:7px;">Go to ◆ and press E. Seeker cannot see these.</div>` +
       missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("");
   }
 

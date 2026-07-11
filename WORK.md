@@ -217,3 +217,16 @@ git status
 - เพิ่มลวดลายพื้นเฉพาะห้อง: server grid, restroom tiles, work-zone carpet, meeting/lounge rug และ reception diagonal pattern
 - ช่องไอเท็มใช้สี/gradient ต่างกันสำหรับ Smoke, Decoy, Stun และ Sprint
 - Server ปฏิเสธการทำ mission จากระยะไกล (ตรวจ integration แล้ว)
+
+## Role Visibility, Visible Decoy และ Teammate Camera
+
+- Mission HUD, mission rings และ task markers แสดงเฉพาะ Hider
+- Seeker ไม่มี minimap และกด M เปิดไม่ได้; Ghost ยังใช้ minimap ดูรอบเกมได้
+- Mission panel ระบุชัดว่าเป็น `HIDER MISSIONS`, ไปที่ ◆ แล้วกด E และ Seeker มองไม่เห็น
+- เปลี่ยน Decoy จาก fake-noise ที่มองไม่เห็นเป็น fake employee จริง
+- Decoy ใช้หน้าตา, nickname และทิศหันของเจ้าของ วิ่งเป็นเวลาไม่เกิน 5 วินาที
+- Decoy หายเป็นควันเมื่อชนกำแพงหรือหมดเวลา และ broadcast ให้ทุก role เห็นเหมือนกัน
+- กล่องสุ่มเปลี่ยนจากกล่องแดงธรรมดาเป็น Mystery Gift สีม่วงพร้อม ribbon/halo สีทอง
+- หลังเก็บ ไอเท็มที่ถือมี emoji ลอยเหนือผู้เล่นและ HUD pattern เฉพาะ Smoke/Decoy/Stun/Sprint
+- Hider กด C เพื่อ cycle กล้องไปดูเพื่อนที่ยังเล่นอยู่เป็นเวลา 4 วินาที โดยไม่ย้ายตัวละคร
+- ทดสอบ Decoy ด้วยสอง client แล้วทั้ง Hider และ Seeker ได้ payload เดียวกัน

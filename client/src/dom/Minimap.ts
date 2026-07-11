@@ -42,6 +42,14 @@ export class Minimap {
     this.applyLayout();
   };
 
+  setVisible(visible: boolean) {
+    this.canvas.style.display = visible ? "block" : "none";
+    if (!visible) {
+      this.expanded = false;
+      this.backdrop.style.display = "none";
+    }
+  }
+
   private collapse = () => {
     if (!this.expanded) return;
     this.expanded = false;

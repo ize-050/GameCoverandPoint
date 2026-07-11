@@ -95,6 +95,15 @@ export interface DecoyNoiseMessage {
   x: number;
   y: number;
 }
+export interface DecoySpawnedMessage {
+  id: string;
+  x: number;
+  y: number;
+  rotY: number;
+  nickname: string;
+  characterVariant: string;
+  durationMs: number;
+}
 
 // server -> hider clients only (a seeker just walked into the server room —
 // zero-payload, the alarm itself is the whole message)

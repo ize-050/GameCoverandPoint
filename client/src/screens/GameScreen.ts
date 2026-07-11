@@ -13,6 +13,7 @@ import {
   CEILING_LIGHTS,
   SMOKE_ITEM_SPAWNS,
   pointInRoom,
+  collidesWithAnyWall,
   type RoomPropDef,
 } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
@@ -25,6 +26,7 @@ import type {
   InspectMissMessage,
   EmoteBroadcastMessage,
   DecoyNoiseMessage,
+  DecoySpawnedMessage,
   ServerAlarmMessage,
   WrongRoomHintMessage,
   MonitorPeekMessage,
@@ -59,7 +61,7 @@ import { createReactionTexture } from "../textures/emote";
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
 import { LocalPlayer3D } from "../entities3d/LocalPlayer3D";
 import { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
-import type { Character3D } from "../entities3d/Character3D";
+import { Character3D } from "../entities3d/Character3D";
 import { GameHud } from "../dom/GameHud";
 import { Minimap } from "../dom/Minimap";
 import { keyboard } from "../core/Keyboard";
@@ -194,6 +196,12 @@ export class GameScreen implements Screen {
   private smokeItemMeshes = new Map<string, THREE.Object3D>();
   private trapMeshes = new Map<string, THREE.Object3D>();
   private missionMarkers = new Map<string, THREE.Object3D>();
+  private activeDecoys: Array<{ id: string; character: Character3D; vx: number; vz: number; expiresAt: number }> = [];
+  private heldItemSprite?: THREE.Sprite;
+  private heldItemVisualKind = "";
+  private cameraTargetPlayerId = "";
+  private teammateCameraUntil = 0;
+  private teammateCameraCursor = -1;
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
   private stateChangeHandler = () => this.checkPhase();
@@ -261,6 +269,11 @@ export class GameScreen implements Screen {
       }
     });
     this.trapMeshes.clear();
+    this.activeDecoys.forEach((decoy) => decoy.character.destroy());
+    this.activeDecoys = [];
+    this.heldItemSprite?.parent?.remove(this.heldItemSprite);
+    this.heldItemSprite = undefined;
+    this.heldItemVisualKind = "";
     this.prevHidden.clear();
     this.prevHasSmokeBomb = false;
     this.prevDazed = false;
@@ -305,7 +318,8 @@ export class GameScreen implements Screen {
         isStunned: this.myPlayer.isStunned,
         speedMultiplier: this.myPlayer.speedMultiplier,
       });
-      this.desiredFollowTarget.copy(this.localPlayer.character.position);
+      const cameraRemote = performance.now() < this.teammateCameraUntil ? this.remotePlayers.get(this.cameraTargetPlayerId) : undefined;
+      this.desiredFollowTarget.copy(cameraRemote?.character.position ?? this.localPlayer.character.position);
 
       // NOT gated on canMove — canMove excludes isHidden (so WASD doesn't
       // drag a hidden player around), but SPACE's own job while hidden is
@@ -322,14 +336,19 @@ export class GameScreen implements Screen {
             const mission = this.findNearbyMission();
             if (mission) this.room!.send("completeMission", { missionId: mission.id });
           }
+          if (keyboard.justDown("KeyC")) this.cycleTeammateCamera();
         }
       }
     }
 
     this.remotePlayers.forEach((p) => p.update(dt));
+    this.updateDecoys(dt);
+    this.updateHeldItemVisual();
 
-    if (keyboard.justDown("KeyM")) this.minimap?.toggle();
-    if (this.localPlayer) {
+    const canUseMap = this.myPlayer?.role === "hider" || this.myPlayer?.isCaught;
+    this.minimap?.setVisible(!!canUseMap);
+    if (canUseMap && keyboard.justDown("KeyM")) this.minimap?.toggle();
+    if (canUseMap && this.localPlayer) {
       const pos = this.localPlayer.character.position;
       this.minimap?.render({ x: pos.x, z: pos.z }, this.remotePlayers, new Map(this.room?.state.missions.entries() ?? []));
     }
@@ -390,7 +409,7 @@ export class GameScreen implements Screen {
     this.hud.setHeldItem(this.myPlayer?.heldItem ?? "", !!showAbilities);
     const activeMissions = MISSION_POOL.filter((mission) => this.room!.state.missions.has(mission.id));
     const completedMissions = new Set(activeMissions.filter((mission) => this.room!.state.missions.get(mission.id)).map((mission) => mission.id));
-    this.hud.setMissions(activeMissions, completedMissions, phase === "seek" && activeMissions.length > 0);
+    this.hud.setMissions(activeMissions, completedMissions, this.myPlayer?.role === "hider" && phase === "seek" && activeMissions.length > 0);
 
     this.hud.setHint(this.computeHint(phase));
 
@@ -492,6 +511,18 @@ export class GameScreen implements Screen {
       playDecoyScareSfx();
     });
     this.unsubs.push(offDecoy);
+
+    const offDecoySpawned = room.onMessage("decoySpawned", (msg: DecoySpawnedMessage) => {
+      const character = new Character3D({ variant: msg.characterVariant as CharacterAppearance["variant"] }, msg.nickname);
+      character.position.set(msg.x, 0, msg.y);
+      character.setTargetRotation(msg.rotY);
+      character.playAnimation("walk");
+      this.scene.add(character.group);
+      const speed = 150;
+      this.activeDecoys.push({ id: msg.id, character, vx: Math.sin(msg.rotY) * speed, vz: Math.cos(msg.rotY) * speed, expiresAt: performance.now() + msg.durationMs });
+      this.hud?.showFeedback("🤡 DECOY DEPLOYED — fake employee running!");
+    });
+    this.unsubs.push(offDecoySpawned);
 
     const offToiletUse = room.onMessage("toiletUse", (msg: ToiletUseMessage) => {
       this.getCharacterFor(msg.sessionId)?.playOneShot("sit", TOILET_USE_ANIM_MS);
@@ -1012,9 +1043,69 @@ export class GameScreen implements Screen {
   private updateMissionMarkers() {
     if (!this.room) return;
     this.missionMarkers.forEach((marker, missionId) => {
-      marker.visible = this.room!.state.phase === "seek" && this.room!.state.missions.has(missionId) && !this.room!.state.missions.get(missionId);
+      marker.visible = this.myPlayer?.role === "hider" && this.room!.state.phase === "seek" && this.room!.state.missions.has(missionId) && !this.room!.state.missions.get(missionId);
       marker.rotation.y += 0.012;
     });
+  }
+
+  private updateDecoys(dt: number) {
+    const now = performance.now();
+    this.activeDecoys = this.activeDecoys.filter((decoy) => {
+      const pos = decoy.character.position;
+      const nextX = pos.x + decoy.vx * dt;
+      const nextZ = pos.z + decoy.vz * dt;
+      const alive = now < decoy.expiresAt && !collidesWithAnyWall(nextX, nextZ);
+      if (!alive) {
+        this.playSmokeEffect(pos.x, pos.z);
+        decoy.character.destroy();
+        return false;
+      }
+      pos.x = nextX;
+      pos.z = nextZ;
+      decoy.character.update(dt);
+      return true;
+    });
+  }
+
+  private updateHeldItemVisual() {
+    const item = this.myPlayer?.heldItem ?? "";
+    if (item !== this.heldItemVisualKind) {
+      this.heldItemSprite?.parent?.remove(this.heldItemSprite);
+      this.heldItemSprite = undefined;
+      this.heldItemVisualKind = item;
+      if (item) {
+        const emoji: Record<string, string> = { smoke: "💨", decoy: "🤡", stun: "⚠️", sprint: "⚡" };
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 96;
+        const ctx = canvas.getContext("2d")!;
+        ctx.font = "60px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(emoji[item] ?? "🎁", 48, 50);
+        this.heldItemSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false }));
+        this.heldItemSprite.scale.set(28, 28, 1);
+        this.scene.add(this.heldItemSprite);
+      }
+    }
+    if (this.heldItemSprite && this.localPlayer) {
+      this.heldItemSprite.position.copy(this.localPlayer.character.position).add(new THREE.Vector3(20, 58, 0));
+    }
+  }
+
+  private cycleTeammateCamera() {
+    if (!this.room || this.myPlayer?.role !== "hider") return;
+    const ids = [...this.room.state.players.entries()]
+      .filter(([id, player]) => id !== this.room!.sessionId && player.role === "hider" && !player.isCaught && this.remotePlayers.has(id))
+      .map(([id]) => id);
+    if (ids.length === 0) {
+      this.hud?.showFeedback("👥 No active Hider teammates to view");
+      return;
+    }
+    this.teammateCameraCursor = (this.teammateCameraCursor + 1) % ids.length;
+    this.cameraTargetPlayerId = ids[this.teammateCameraCursor];
+    this.teammateCameraUntil = performance.now() + 4000;
+    const teammate = this.room.state.players.get(this.cameraTargetPlayerId);
+    this.hud?.showFeedback(`👁 CAMERA: ${escapeHtml(teammate?.nickname ?? "teammate")} · 4s`);
   }
 
   private buildWayfinding() {
@@ -1714,14 +1805,24 @@ export class GameScreen implements Screen {
   // cooldown (server's `collectedSmokeItems`), same bob-and-spin idle
   // treatment as a typical "pick this up" game item.
   private buildSmokeItems() {
-    const mat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x9f1239, emissiveIntensity: 0.55 });
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0x7c3aed, emissive: 0x4c1d95, emissiveIntensity: 0.6 });
+    const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0x854d0e, emissiveIntensity: 0.35 });
     for (const spawn of SMOKE_ITEM_SPAWNS) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(16, 16, 16), mat);
-      mesh.position.set(spawn.x, 14, spawn.y);
-      this.scene.add(mesh);
-      this.smokeItemMeshes.set(spawn.id, mesh);
+      const gift = new THREE.Group();
+      const cube = new THREE.Mesh(new THREE.BoxGeometry(18, 15, 18), boxMat);
+      const ribbonX = new THREE.Mesh(new THREE.BoxGeometry(4, 16, 19), ribbonMat);
+      const ribbonZ = new THREE.Mesh(new THREE.BoxGeometry(19, 16, 4), ribbonMat);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(20, 3, 20), boxMat);
+      lid.position.y = 9;
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(14, 1.2, 6, 24), ribbonMat);
+      halo.rotation.x = Math.PI / 2;
+      halo.position.y = -7;
+      gift.add(cube, ribbonX, ribbonZ, lid, halo);
+      gift.position.set(spawn.x, 14, spawn.y);
+      this.scene.add(gift);
+      this.smokeItemMeshes.set(spawn.id, gift);
 
-      new TWEEN.Tween(mesh.position)
+      new TWEEN.Tween(gift.position)
         .to({ y: 20 }, 900 + Math.random() * 300)
         .yoyo(true)
         .repeat(Infinity)
