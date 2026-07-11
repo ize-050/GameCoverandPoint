@@ -89,6 +89,13 @@ function appearanceOf(player: { characterVariant: string }): CharacterAppearance
   return { variant: player.characterVariant as CharacterAppearance["variant"] };
 }
 
+// The seeker's nameplate always reads red (to whoever can see them at all —
+// role isn't secret once you've spotted someone) so a hider who spots the
+// seeker gets an unmistakable "that's the threat" cue.
+function nameColorFor(player: { role: string }): string {
+  return player.role === "seeker" ? "#ef4444" : "#ffffff";
+}
+
 function propHintText(kind: RoomPropDef["kind"]): string {
   if (kind === "whiteboard") return "[SPACE] เขียนกระดานหลอกคนหา";
   if (kind === "coffee-machine") return "[SPACE] ดื่มกาแฟ (เร็วขึ้นชั่วคราว)";
@@ -459,22 +466,26 @@ export class GameScreen implements Screen {
       if (sessionId === localId) {
         this.myPlayer = player;
         this.localPlayer = new LocalPlayer3D(this.scene, room, player.x, player.y, player.nickname, appearanceOf(player));
+        this.localPlayer.character.setNameColor(nameColorFor(player));
         const unsubSelf = player.onChange(() => {
           this.checkHideGimmick(sessionId, player);
           this.checkSmokePickup(player);
           this.refreshAllVisibility();
+          this.localPlayer?.character.setNameColor(nameColorFor(player));
         });
         this.unsubs.push(unsubSelf);
         return;
       }
 
       const remote = new RemotePlayer3D(this.scene, player.x, player.y, player.nickname, appearanceOf(player));
+      remote.character.setNameColor(nameColorFor(player));
       this.remotePlayers.set(sessionId, remote);
       this.updateRemoteVisibility(remote, player);
 
       const unsubChange = player.onChange(() => {
         remote.setTarget(player.x, player.y, player.rotY);
         remote.setAppearance(appearanceOf(player));
+        remote.character.setNameColor(nameColorFor(player));
         remote.playAnimation(player.isCaught ? "die" : player.anim);
         this.updateRemoteVisibility(remote, player);
         this.checkHideGimmick(sessionId, player);

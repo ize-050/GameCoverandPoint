@@ -43,8 +43,11 @@ export class Character3D {
   private targetFacing = 0;
   private hasFacing = false;
   private nameSprite: THREE.Sprite;
+  private nickname: string;
+  private nameColor = "#ffffff";
 
   constructor(appearance: CharacterAppearance, nickname: string) {
+    this.nickname = nickname;
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(13, 16),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 })
@@ -166,6 +169,23 @@ export class Character3D {
 
   setVisible(visible: boolean) {
     this.group.visible = visible;
+  }
+
+  // Re-bakes the nameplate texture in a new color (e.g. red once a player's
+  // role is revealed as "seeker") — the name is baked into a canvas texture,
+  // not a shader uniform, so a color change means building a new one, same
+  // dispose-old/swap-in-new shape as setAppearance's model swap.
+  setNameColor(color: string) {
+    if (color === this.nameColor) return;
+    this.nameColor = color;
+
+    const oldMat = this.nameSprite.material;
+    oldMat.map?.dispose();
+    oldMat.dispose();
+
+    const { texture: nameTex, width: nameW, height: nameH } = createNameTexture(this.nickname, color);
+    this.nameSprite.material = new THREE.SpriteMaterial({ map: nameTex, transparent: true });
+    this.nameSprite.scale.set(nameW, nameH, 1);
   }
 
   destroy() {
