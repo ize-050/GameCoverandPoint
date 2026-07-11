@@ -1,0 +1,651 @@
+import { Room, Client, matchMaker } from "@colyseus/core";
+import { GameState } from "../schema/GameState.js";
+import { Player } from "../schema/Player.js";
+import { GAME_CONFIG } from "../config/gameConfig.js";
+import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig.js";
+import { COVER_POINTS, ROOMS, ROOM_PROPS, SEEKER_SPAWN, randomHiderSpawn, collidesWithAnyWall, findRoomAt } from "../../../shared/mapLayout.js";
+import { CoverPoint } from "../schema/CoverPoint.js";
+import {
+  ROOM_CODE_LENGTH,
+  ROOM_CODE_ALPHABET,
+  JOIN_ERROR,
+  CHARACTER_VARIANTS,
+  DEFAULT_APPEARANCE,
+  type CreateRoomOptions,
+  type JoinRoomOptions,
+  type MoveMessage,
+  type StartGameMessage,
+  type CoverPointMessage,
+  type EmoteMessage,
+  type UsePropMessage,
+} from "../../../shared/messages.js";
+
+// Looks identical to a real cover point client-side, but can never actually
+// hide anyone — computed once from the shared map data rather than kept in
+// schema, since @colyseus/schema syncs whatever fields exist and this must
+// never reach clients (would give away decoys instantly).
+const DECOY_COVER_POINT_IDS = new Set(COVER_POINTS.filter((cp) => cp.isDecoy).map((cp) => cp.id));
+
+function shuffled<T>(arr: T[]): T[] {
+  return arr
+    .map((item) => ({ item, r: Math.random() }))
+    .sort((a, b) => a.r - b.r)
+    .map(({ item }) => item);
+}
+
+function sanitizeAppearance(input: unknown) {
+  const raw = (input ?? {}) as { variant?: unknown };
+  return {
+    variant: typeof raw.variant === "string" && (CHARACTER_VARIANTS as readonly string[]).includes(raw.variant) ? raw.variant : DEFAULT_APPEARANCE.variant,
+  };
+}
+
+function generateCode(): string {
+  let code = "";
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+    code += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+export class GameRoom extends Room<GameState> {
+  // Real player cap is enforced in onAuth (so we control the rejection message);
+  // maxClients here just guards against runaway seat reservations.
+  maxClients = 64;
+
+  private nextJoinSeq = 0;
+  private joinSeq = new Map<string, number>();
+  private lastMoveAt = new Map<string, number>();
+  private previousSeekerIds = new Set<string>();
+  // Cover-point occupancy lives ONLY here, never in schema — the schema only
+  // exposes CoverPoint.isOccupied (spec 4.2: never expose occupant identity).
+  private coverOccupants = new Map<string, string>();
+  private inspectCooldownUntil = new Map<string, number>();
+  private lastEmoteAt = new Map<string, number>();
+  private decoyCooldownUntil = new Map<string, number>();
+  private switchCooldownUntil = new Map<string, number>();
+  private lastRoomId = new Map<string, string>();
+  private whiteboardCooldownUntil = new Map<string, number>();
+  private coffeeCooldownUntil = new Map<string, number>();
+  private monitorCooldownUntil = new Map<string, number>();
+  private toiletUseCooldownUntil = new Map<string, number>();
+  private firstCatchAwarded = false;
+
+  async onCreate(_options: CreateRoomOptions) {
+    this.setState(new GameState());
+
+    const code = await this.generateUniqueCode();
+    this.state.roomCode = code;
+    // filterBy(["code"]) matches against top-level listing fields (populated from
+    // the room-creator's own options), not this.metadata — the code only exists
+    // *after* onCreate runs, so it must be written directly to the listing + saved.
+    (this.listing as unknown as { code: string }).code = code;
+    await this.listing.save();
+
+    for (const cp of COVER_POINTS) {
+      const coverPoint = new CoverPoint();
+      coverPoint.id = cp.id;
+      coverPoint.x = cp.x;
+      coverPoint.y = cp.y;
+      coverPoint.kind = cp.kind;
+      this.state.coverPoints.set(cp.id, coverPoint);
+    }
+
+    this.onMessage("move", (client, message: MoveMessage) => this.handleMove(client, message));
+    this.onMessage("startGame", (client, message: StartGameMessage) => this.handleStartGame(client, message));
+    this.onMessage("nextRound", (client) => this.handleNextRound(client));
+    this.onMessage("hide", (client, message: CoverPointMessage) => this.handleHide(client, message));
+    this.onMessage("unhide", (client) => this.handleUnhide(client));
+    this.onMessage("inspect", (client, message: CoverPointMessage) => this.handleInspect(client, message));
+    this.onMessage("tag", (client) => this.handleTag(client));
+    this.onMessage("emote", (client, message: EmoteMessage) => this.handleEmote(client, message));
+    this.onMessage("decoy", (client) => this.handleDecoy(client));
+    this.onMessage("useProp", (client, message: UsePropMessage) => this.handleUseProp(client, message));
+
+    this.clock.setInterval(() => this.tick(), 1000);
+
+    console.log(`Room created: ${code}`);
+  }
+
+  private tick() {
+    if (this.state.phase === "lobby") return;
+
+    if (this.state.phase === "seek") this.updateRelocateWindow();
+
+    this.state.timeRemaining = Math.max(0, this.state.timeRemaining - 1);
+    if (this.state.timeRemaining > 0) return;
+
+    if (this.state.phase === "role_reveal") this.beginHidePhase();
+    else if (this.state.phase === "hide") this.beginSeekPhase();
+    else if (this.state.phase === "seek") this.endRound();
+    else if (this.state.phase === "result") this.beginLobby();
+  }
+
+  // Recurring "come out and relocate" window during the seek phase, computed
+  // from elapsed time rather than a separate timer so it can't drift out of
+  // sync with the per-second tick that already drives timeRemaining.
+  private updateRelocateWindow() {
+    const elapsed = GAME_CONFIG.SEEK_PHASE_SEC - this.state.timeRemaining;
+    const cyclePos = ((elapsed % GAME_CONFIG.RELOCATE_INTERVAL_SEC) + GAME_CONFIG.RELOCATE_INTERVAL_SEC) % GAME_CONFIG.RELOCATE_INTERVAL_SEC;
+    this.state.relocateActive = cyclePos < GAME_CONFIG.RELOCATE_WINDOW_SEC;
+  }
+
+  private async generateUniqueCode(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = generateCode();
+      const existing = await matchMaker.query({ name: "game" });
+      if (!existing.some((room) => (room as unknown as { code?: string }).code === code)) return code;
+    }
+    return generateCode();
+  }
+
+  async onAuth(_client: Client, options: JoinRoomOptions | CreateRoomOptions) {
+    if (this.state.phase !== "lobby") {
+      throw new Error(JOIN_ERROR.GAME_ALREADY_STARTED);
+    }
+    if (this.state.players.size >= GAME_CONFIG.MAX_PLAYERS) {
+      throw new Error(JOIN_ERROR.ROOM_FULL);
+    }
+    return options;
+  }
+
+  onJoin(client: Client, options: CreateRoomOptions) {
+    const seq = this.nextJoinSeq++;
+    this.joinSeq.set(client.sessionId, seq);
+    this.lastMoveAt.set(client.sessionId, Date.now());
+
+    const player = new Player();
+    player.id = client.sessionId;
+    player.nickname = (options.nickname || `Player-${client.sessionId.slice(0, 4)}`).slice(0, 12);
+    player.isHost = seq === 0;
+    // No roles yet (lands in Phase 3) — spawn everyone at a hider edge point,
+    // since the seeker room's spawn is reserved for that role specifically.
+    const spawn = randomHiderSpawn();
+    player.x = spawn.x;
+    player.y = spawn.y;
+
+    const appearance = sanitizeAppearance((options as CreateRoomOptions | JoinRoomOptions).appearance);
+    player.characterVariant = appearance.variant;
+
+    this.state.players.set(client.sessionId, player);
+  }
+
+  private hasConnectedSeeker(): boolean {
+    return this.clients.some((c) => this.state.players.get(c.sessionId)?.role === "seeker");
+  }
+
+  async onLeave(client: Client, consented: boolean) {
+    const leavingPlayer = this.state.players.get(client.sessionId);
+    const wasHost = leavingPlayer?.isHost;
+
+    // DoD: don't let the round hang on a disconnected seeker. Checked immediately
+    // against currently-connected clients — independent of the reconnection grace
+    // window below, so a flaky wifi drop still ends the round right away for
+    // everyone else even though the seeker personally gets a chance to rejoin.
+    if ((this.state.phase === "hide" || this.state.phase === "seek") && leavingPlayer?.role === "seeker" && !this.hasConnectedSeeker()) {
+      this.endRound();
+    }
+
+    // Phase 5: reconnect within 30s and resume the same seat/state (spec DoD).
+    if (!consented) {
+      try {
+        await this.allowReconnection(client, 30);
+        return; // reconnected — player entry was never removed, nothing else to do
+      } catch {
+        // grace period expired — fall through to full cleanup
+      }
+    }
+
+    if (leavingPlayer?.isHidden) this.freeCoverPoint(leavingPlayer.coverPointId, client.sessionId);
+
+    this.state.players.delete(client.sessionId);
+    this.joinSeq.delete(client.sessionId);
+    this.lastMoveAt.delete(client.sessionId);
+    this.inspectCooldownUntil.delete(client.sessionId);
+    this.lastEmoteAt.delete(client.sessionId);
+    this.decoyCooldownUntil.delete(client.sessionId);
+    this.switchCooldownUntil.delete(client.sessionId);
+    this.lastRoomId.delete(client.sessionId);
+    this.whiteboardCooldownUntil.delete(client.sessionId);
+    this.coffeeCooldownUntil.delete(client.sessionId);
+    this.monitorCooldownUntil.delete(client.sessionId);
+    this.toiletUseCooldownUntil.delete(client.sessionId);
+
+    if (wasHost) this.migrateHost();
+  }
+
+  private handleEmote(client: Client, message: EmoteMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.isCaught) return; // ghosts can't emote (spec 2.5/2.3)
+    if (!Number.isInteger(message?.id) || message.id < 1 || message.id > 4) return;
+
+    const now = Date.now();
+    const last = this.lastEmoteAt.get(client.sessionId) ?? 0;
+    if (now - last < GAME_CONFIG.EMOTE_COOLDOWN_MS) return;
+    this.lastEmoteAt.set(client.sessionId, now);
+
+    this.broadcast("emote", { sessionId: client.sessionId, id: message.id });
+  }
+
+  private migrateHost() {
+    const nextId = [...this.joinSeq.entries()].sort((a, b) => a[1] - b[1])[0]?.[0];
+    if (!nextId) return;
+    const next = this.state.players.get(nextId);
+    if (next) next.isHost = true;
+  }
+
+  private handleStartGame(client: Client, message: StartGameMessage) {
+    if (this.state.phase !== "lobby") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player?.isHost) return;
+    if (this.state.players.size < GAME_CONFIG.MIN_PLAYERS) return;
+
+    this.state.seekerCount = this.clampSeekerCount(message?.seekerCount);
+    this.state.round += 1;
+    this.beginRound();
+  }
+
+  private handleNextRound(client: Client) {
+    if (this.state.phase !== "result") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player?.isHost) return;
+
+    this.state.round += 1;
+    this.beginRound();
+  }
+
+  private maxSeekersFor(playerCount: number): number {
+    return playerCount <= 5 ? 1 : 2; // spec 2.1 ratio table caps at 2 seekers
+  }
+
+  private clampSeekerCount(requested: unknown): number {
+    const n = this.state.players.size;
+    const max = this.maxSeekersFor(n);
+    const fallback = Math.max(1, Math.floor(n / 5));
+    const value = typeof requested === "number" && Number.isFinite(requested) ? Math.round(requested) : fallback;
+    return Math.min(max, Math.max(1, value));
+  }
+
+  private assignRoles() {
+    const ids = [...this.state.players.keys()];
+    const seekerCount = Math.min(this.clampSeekerCount(this.state.seekerCount), ids.length - 1);
+
+    const fresh = shuffled(ids.filter((id) => !this.previousSeekerIds.has(id)));
+    const stale = shuffled(ids.filter((id) => this.previousSeekerIds.has(id)));
+    // Prefer players who weren't seeker last round (spec 2.1: avoid repeats when avoidable).
+    const seekerIds = [...fresh, ...stale].slice(0, seekerCount);
+    const seekerSet = new Set(seekerIds);
+
+    ids.forEach((id) => {
+      const player = this.state.players.get(id)!;
+      player.role = seekerSet.has(id) ? "seeker" : "hider";
+      player.isCaught = false;
+      player.isHidden = false;
+      player.coverPointId = "";
+      player.inspectsRemaining = seekerSet.has(id) ? GAME_CONFIG.MAX_INSPECT_ATTEMPTS : 0;
+      player.speedBoosted = false;
+    });
+
+    this.previousSeekerIds = seekerSet;
+  }
+
+  private beginRound() {
+    this.assignRoles();
+    this.firstCatchAwarded = false;
+    this.coverOccupants.clear();
+    this.inspectCooldownUntil.clear();
+    this.decoyCooldownUntil.clear();
+    this.switchCooldownUntil.clear();
+    this.lastRoomId.clear();
+    this.whiteboardCooldownUntil.clear();
+    this.coffeeCooldownUntil.clear();
+    this.monitorCooldownUntil.clear();
+    this.toiletUseCooldownUntil.clear();
+    this.state.relocateActive = false;
+    this.state.darkRooms.clear();
+    this.state.phase = "role_reveal";
+    this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
+
+    this.clients.forEach((c) => {
+      const player = this.state.players.get(c.sessionId);
+      if (player) c.send("yourRole", { role: player.role });
+    });
+  }
+
+  private beginHidePhase() {
+    this.state.coverPoints.forEach((cp) => (cp.isOccupied = false));
+    this.state.players.forEach((player) => {
+      if (player.role === "seeker") {
+        player.x = SEEKER_SPAWN.x + (Math.random() * 40 - 20);
+        player.y = SEEKER_SPAWN.y + (Math.random() * 40 - 20);
+      } else {
+        const spawn = randomHiderSpawn();
+        player.x = spawn.x;
+        player.y = spawn.y;
+      }
+    });
+
+    this.state.phase = "hide";
+    this.state.timeRemaining = GAME_CONFIG.HIDE_PHASE_SEC;
+  }
+
+  private beginSeekPhase() {
+    this.state.phase = "seek";
+    this.state.timeRemaining = GAME_CONFIG.SEEK_PHASE_SEC;
+  }
+
+  private endRound() {
+    const hiders = [...this.state.players.values()].filter((p) => p.role === "hider");
+    const survivors = hiders.filter((p) => !p.isCaught);
+
+    for (const survivor of survivors) survivor.score += GAME_CONFIG.SCORE.SURVIVE;
+    if (survivors.length === 1) survivors[0].score += GAME_CONFIG.SCORE.LAST_SURVIVOR_BONUS;
+
+    this.state.relocateActive = false;
+    this.state.darkRooms.clear();
+    this.state.phase = "result";
+    this.state.timeRemaining = GAME_CONFIG.RESULT_SEC;
+  }
+
+  private beginLobby() {
+    this.state.phase = "lobby";
+    this.state.timeRemaining = 0;
+  }
+
+  private handleMove(client: Client, message: MoveMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+    if (this.state.phase === "hide" && player.role === "seeker") return; // blacked out, can't move
+    if (player.isHidden) return; // must send "unhide" first — SPACE toggles, WASD doesn't
+
+    const now = Date.now();
+    const dt = Math.max(1, now - (this.lastMoveAt.get(client.sessionId) ?? now - 1)) / 1000;
+    const maxSpeed = Math.max(GAME_CONFIG.HIDER_SPEED, GAME_CONFIG.SEEKER_SPEED);
+    const maxDist = maxSpeed * dt * 1.5;
+
+    const dist = Math.hypot(message.x - player.x, message.y - player.y);
+    if (dist > maxDist) return; // reject implausible jump, per spec 4.2 #3
+
+    const nextX = Math.max(0, Math.min(MAP_WIDTH, message.x));
+    const nextY = Math.max(0, Math.min(MAP_HEIGHT, message.y));
+    if (!player.isCaught && collidesWithAnyWall(nextX, nextY)) return; // ghosts float through walls
+
+    player.x = nextX;
+    player.y = nextY;
+    player.anim = message.anim;
+    this.lastMoveAt.set(client.sessionId, now);
+
+    if (player.role === "seeker") this.checkServerRoomAlarm(client.sessionId, player);
+  }
+
+  // Passive server-room gimmick: no interaction needed from either side —
+  // walking a seeker into the server room is inherently risky, since every
+  // hider gets an early warning the instant they cross the threshold.
+  // Tracked per-session (not global) since two seekers can be in different
+  // rooms at once; only fires on the top of a fresh threshold-cross, not
+  // every tick, otherwise it'd spam a broadcast on every move inside the room.
+  private checkServerRoomAlarm(sessionId: string, player: Player) {
+    const roomId = findRoomAt(player.x, player.y)?.id ?? "";
+    const prevRoomId = this.lastRoomId.get(sessionId) ?? "";
+    this.lastRoomId.set(sessionId, roomId);
+    if (roomId !== "server" || prevRoomId === "server") return;
+
+    this.clients.forEach((c) => {
+      if (this.state.players.get(c.sessionId)?.role === "hider") c.send("serverAlarm", {});
+    });
+  }
+
+  private freeCoverPoint(coverPointId: string, expectedOccupant: string) {
+    if (!coverPointId) return;
+    if (this.coverOccupants.get(coverPointId) !== expectedOccupant) return;
+    this.coverOccupants.delete(coverPointId);
+    const cp = this.state.coverPoints.get(coverPointId);
+    if (cp) cp.isOccupied = false;
+  }
+
+  private handleHide(client: Client, message: CoverPointMessage) {
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    const player = this.state.players.get(client.sessionId);
+    const cp = this.state.coverPoints.get(message.coverPointId);
+    if (!player || !cp) return;
+    if (DECOY_COVER_POINT_IDS.has(cp.id)) return; // looks real, never actually usable
+    if (player.role !== "hider" || player.isCaught || player.isHidden) return;
+    if (cp.isOccupied) return; // spec 2.3: 1 point, 1 person
+    if (Math.hypot(player.x - cp.x, player.y - cp.y) > GAME_CONFIG.HIDE_RANGE_PX) return;
+
+    cp.isOccupied = true;
+    this.coverOccupants.set(cp.id, client.sessionId);
+    player.isHidden = true;
+    player.coverPointId = cp.id;
+    player.x = cp.x;
+    player.y = cp.y;
+    if (this.state.relocateActive) player.score += GAME_CONFIG.SCORE.RELOCATE_BONUS;
+  }
+
+  private handleUnhide(client: Client) {
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !player.isHidden) return;
+
+    this.freeCoverPoint(player.coverPointId, client.sessionId);
+    player.isHidden = false;
+    player.coverPointId = "";
+  }
+
+  private handleInspect(client: Client, message: CoverPointMessage) {
+    if (this.state.phase !== "seek") return;
+
+    const seeker = this.state.players.get(client.sessionId);
+    const cp = this.state.coverPoints.get(message.coverPointId);
+    if (!seeker || !cp) return;
+    if (seeker.role !== "seeker" || seeker.isCaught) return;
+    // Harder to search a dark room thoroughly — a seeker who toggled the
+    // lights off themselves pays this cost too, same as anyone else in there.
+    const seekerRoom = findRoomAt(seeker.x, seeker.y);
+    const inspectRange =
+      seekerRoom && this.state.darkRooms.has(seekerRoom.id) ? GAME_CONFIG.DARK_INSPECT_RANGE_PX : GAME_CONFIG.INSPECT_RANGE_PX;
+    if (Math.hypot(seeker.x - cp.x, seeker.y - cp.y) > inspectRange) return;
+    if (seeker.inspectsRemaining <= 0) return; // budget exhausted — no more free sweeps
+
+    const now = Date.now();
+    if (now < (this.inspectCooldownUntil.get(client.sessionId) ?? 0)) return; // still on cooldown
+
+    seeker.inspectsRemaining -= 1;
+    const occupantId = this.coverOccupants.get(cp.id);
+    if (!occupantId) {
+      this.inspectCooldownUntil.set(client.sessionId, now + GAME_CONFIG.INSPECT_COOLDOWN_MS);
+      client.send("inspectMiss", { cooldownMs: GAME_CONFIG.INSPECT_COOLDOWN_MS });
+      return;
+    }
+
+    this.coverOccupants.delete(cp.id);
+    cp.isOccupied = false;
+
+    const hider = this.state.players.get(occupantId);
+    this.resolveCatch(client, seeker, hider);
+  }
+
+  // Shared "hider gets caught" side effects — used by both a successful
+  // cover-point inspect and a direct tag on an exposed hider. `hider` can be
+  // undefined (matches the original inspect behavior: if the recorded
+  // occupant somehow no longer exists in state, the seeker still gets the
+  // score/message/end-round-check, just no hider-side mutation).
+  private resolveCatch(seekerClient: Client, seeker: Player, hider: Player | undefined) {
+    if (hider) {
+      hider.isHidden = false;
+      hider.isCaught = true;
+      hider.coverPointId = "";
+      this.clients.forEach((c) => {
+        if (c.sessionId === hider.id) c.send("caught", { byNickname: seeker.nickname });
+      });
+    }
+
+    const points = GAME_CONFIG.SCORE.CATCH + (this.firstCatchAwarded ? 0 : GAME_CONFIG.SCORE.FIRST_CATCH_BONUS);
+    seeker.score += points;
+    this.firstCatchAwarded = true;
+    seekerClient.send("catchSuccess", { targetNickname: hider?.nickname ?? "", points });
+
+    const anyHiderLeft = [...this.state.players.values()].some((p) => p.role === "hider" && !p.isCaught);
+    if (!anyHiderLeft) this.endRound(); // seeker caught everyone before time ran out
+  }
+
+  // Seeker action: catch a hider who is out in the open (not hidden at a
+  // cover point) by walking up to them — free relocation only makes sense
+  // if being caught exposed has a real consequence. No cooldown/inspect-
+  // budget cost: this is a skill/positioning reward, deliberately separate
+  // from the cover-point-search economy.
+  private handleTag(client: Client) {
+    if (this.state.phase !== "seek") return;
+
+    const seeker = this.state.players.get(client.sessionId);
+    if (!seeker || seeker.role !== "seeker" || seeker.isCaught) return;
+
+    let nearest: Player | undefined;
+    let nearestDist: number = GAME_CONFIG.TAG_RANGE_PX;
+    this.state.players.forEach((p) => {
+      if (p.role !== "hider" || p.isHidden || p.isCaught) return;
+      const dist = Math.hypot(seeker.x - p.x, seeker.y - p.y);
+      if (dist <= nearestDist) {
+        nearest = p;
+        nearestDist = dist;
+      }
+    });
+    if (!nearest) return;
+
+    this.resolveCatch(client, seeker, nearest);
+  }
+
+  // Hider ability: throw a fake "noise" at a random unoccupied cover point,
+  // seen only by seekers — never picks an actually-occupied spot, so it can
+  // never accidentally rat out a hiding teammate.
+  private handleDecoy(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "hider" || player.isCaught) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    const now = Date.now();
+    if (now < (this.decoyCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.decoyCooldownUntil.set(client.sessionId, now + GAME_CONFIG.DECOY_COOLDOWN_MS);
+
+    const unoccupied = [...this.state.coverPoints.values()].filter((cp) => !cp.isOccupied);
+    const pool = unoccupied.length > 0 ? unoccupied : [...this.state.coverPoints.values()];
+    const target = pool[Math.floor(Math.random() * pool.length)];
+    if (!target) return;
+
+    this.clients.forEach((c) => {
+      if (this.state.players.get(c.sessionId)?.role === "seeker") {
+        c.send("decoyNoise", { x: target.x, y: target.y });
+      }
+    });
+  }
+
+  // Any player triggers whichever room-prop gimmick they're standing next
+  // to via proximity + the same SPACE key as hide/tag/inspect — kept off a
+  // dedicated key so the control scheme doesn't grow. propId identifies
+  // which ROOM_PROPS entry was used; its `kind` picks the ability. The
+  // light switch is available to every role (universal lights mechanic);
+  // whiteboard/coffee-machine/monitor stay hider-only. chair/alarm-light
+  // have no active ability, just serve as physical anchors/flavor.
+  private handleUseProp(client: Client, message: UsePropMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.isCaught) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    const prop = ROOM_PROPS.find((p) => p.id === message?.propId);
+    if (!prop) return;
+    if (Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
+
+    if (prop.kind === "light-switch") {
+      this.triggerToggleLight(client, player);
+      return;
+    }
+    if (prop.kind === "toilet-use") {
+      this.triggerToiletUse(client);
+      return;
+    }
+    if (player.role !== "hider") return;
+    if (prop.kind === "whiteboard") this.triggerWhiteboardDecoy(client);
+    else if (prop.kind === "coffee-machine") this.triggerCoffeeBoost(client, player);
+    else if (prop.kind === "monitor") this.triggerMonitorPeek(client);
+  }
+
+  // Universal light switch: any role, any room, toggle on/off via the
+  // physical switch prop. Turning a room OFF is always allowed (freeing a
+  // slot); turning one ON is rejected once MAX_DARK_ROOMS are already dark.
+  private triggerToggleLight(client: Client, player: Player) {
+    const now = Date.now();
+    if (now < (this.switchCooldownUntil.get(client.sessionId) ?? 0)) return;
+
+    const room = findRoomAt(player.x, player.y);
+    if (!room) return; // standing in the open cubicle floor — nothing to toggle, cooldown not spent
+
+    if (this.state.darkRooms.has(room.id)) {
+      this.state.darkRooms.delete(room.id);
+    } else {
+      if (this.state.darkRooms.size >= GAME_CONFIG.MAX_DARK_ROOMS) return; // capped, cooldown not spent
+      this.state.darkRooms.set(room.id, true);
+    }
+
+    this.switchCooldownUntil.set(client.sessionId, now + GAME_CONFIG.SWITCH_COOLDOWN_MS);
+  }
+
+  // Pure comedic gag (toilet room) — any role, no gameplay effect at all,
+  // just broadcasts to every client so everyone nearby sees/hears it too.
+  private triggerToiletUse(client: Client) {
+    const now = Date.now();
+    if (now < (this.toiletUseCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.toiletUseCooldownUntil.set(client.sessionId, now + GAME_CONFIG.TOILET_USE_COOLDOWN_MS);
+    this.broadcast("toiletUse", { sessionId: client.sessionId });
+  }
+
+  // Whiteboard decoy (meeting room): pure misdirection — names a random
+  // *other* real room to every seeker, never where any hider actually is.
+  // Excludes "meeting" itself (telling seekers to check the room the hider
+  // is literally standing in would be a giveaway, not a decoy).
+  private triggerWhiteboardDecoy(client: Client) {
+    const now = Date.now();
+    if (now < (this.whiteboardCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.whiteboardCooldownUntil.set(client.sessionId, now + GAME_CONFIG.WHITEBOARD_DECOY_COOLDOWN_MS);
+
+    const pool = ROOMS.filter((r) => r.id !== "meeting");
+    const fakeRoom = pool[Math.floor(Math.random() * pool.length)];
+    if (!fakeRoom) return;
+
+    this.clients.forEach((c) => {
+      if (this.state.players.get(c.sessionId)?.role === "seeker") {
+        c.send("wrongRoomHint", { roomName: fakeRoom.name });
+      }
+    });
+  }
+
+  // Coffee boost (work zone B): temporary speed multiplier — a "modest"
+  // multiplier deliberately chosen to stay within handleMove's existing
+  // implausible-jump tolerance (maxSpeed * dt * 1.5) without needing any
+  // server-side movement-validation changes.
+  private triggerCoffeeBoost(client: Client, player: Player) {
+    const now = Date.now();
+    if (now < (this.coffeeCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.coffeeCooldownUntil.set(client.sessionId, now + GAME_CONFIG.COFFEE_BOOST_COOLDOWN_MS);
+
+    player.speedBoosted = true;
+    this.clock.setTimeout(() => {
+      player.speedBoosted = false;
+    }, GAME_CONFIG.COFFEE_BOOST_DURATION_MS);
+  }
+
+  // Security monitor peek (reception): one-shot, targeted only at the
+  // triggering hider — names whichever real room a seeker currently occupies
+  // (first connected seeker; games run with 1-2 seekers per spec's ratio table).
+  private triggerMonitorPeek(client: Client) {
+    const now = Date.now();
+    if (now < (this.monitorCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.monitorCooldownUntil.set(client.sessionId, now + GAME_CONFIG.MONITOR_PEEK_COOLDOWN_MS);
+
+    const seeker = [...this.state.players.values()].find((p) => p.role === "seeker");
+    const roomName = seeker ? findRoomAt(seeker.x, seeker.y)?.name ?? "อยู่นอกห้อง" : "อยู่นอกห้อง";
+    client.send("monitorPeek", { roomName });
+  }
+}

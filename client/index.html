@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hide &amp; Seek Online — hns-party</title>
+    <style>
+      :root {
+        --bg-deep: #0a0f1c;
+        --panel-border: rgba(255, 255, 255, 0.09);
+        --accent: #22d3ee;
+        --accent-dark: #0891b2;
+        --success: #4ade80;
+        --success-dark: #16a34a;
+        --danger: #f87171;
+        --warning: #fbbf24;
+        --text: #f1f5f9;
+        --text-dim: #94a3b8;
+      }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: radial-gradient(120% 120% at 20% 0%, #16233b 0%, #0d1526 45%, var(--bg-deep) 100%);
+      }
+
+      #app {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* ---- shared UI kit for Phaser DOM overlays (Menu/Lobby/Result) ---- */
+
+      .hns-panel {
+        background: linear-gradient(160deg, rgba(30, 41, 59, 0.9), rgba(13, 20, 36, 0.95));
+        border: 1px solid var(--panel-border);
+        border-radius: 20px;
+        box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.65), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+        padding: 30px 34px;
+      }
+
+      .hns-input {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 15px;
+        color: var(--text);
+        outline: none;
+        font-family: inherit;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-sizing: border-box;
+      }
+      .hns-input::placeholder { color: var(--text-dim); }
+      .hns-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.22);
+      }
+
+      .hns-btn {
+        border: none;
+        border-radius: 10px;
+        padding: 13px 22px;
+        font-size: 15px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+        transition: transform 0.12s, filter 0.12s, box-shadow 0.12s;
+        letter-spacing: 0.01em;
+      }
+      .hns-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+      .hns-btn:active:not(:disabled) { transform: translateY(0); }
+      .hns-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; filter: none; }
+
+      .hns-btn-primary {
+        background: linear-gradient(135deg, #67e8f9, var(--accent) 55%, var(--accent-dark));
+        box-shadow: 0 10px 24px -8px rgba(34, 211, 238, 0.55);
+        color: #052228;
+      }
+      .hns-btn-secondary {
+        background: linear-gradient(135deg, #86efac, var(--success) 55%, var(--success-dark));
+        box-shadow: 0 10px 24px -8px rgba(74, 222, 128, 0.5);
+        color: #052012;
+      }
+      .hns-btn-ghost {
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: none;
+        padding: 8px 12px;
+      }
+
+      .hns-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+      }
+
+      .hns-swatch {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 2px solid transparent;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        transition: transform 0.1s, border-color 0.1s;
+        padding: 0;
+      }
+      .hns-swatch:hover { transform: scale(1.12); }
+      .hns-swatch.selected { border-color: #ffffff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2); }
+
+      .hns-title {
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        text-shadow: 0 2px 16px rgba(34, 211, 238, 0.35);
+      }
+
+      .hns-error {
+        color: var(--danger);
+        font-size: 13px;
+        min-height: 18px;
+        text-align: center;
+      }
+
+      .hns-code-pill {
+        display: inline-block;
+        background: rgba(34, 211, 238, 0.12);
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        color: var(--accent);
+        border-radius: 999px;
+        padding: 4px 16px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
