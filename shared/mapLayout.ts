@@ -280,7 +280,10 @@ export const WALLS: WallRect[] = [
   ...CUBICLE_SW.walls.map(scaleWallRect),
   ...CUBICLE_SE.walls.map(scaleWallRect),
   ...CUBICLE_C.walls.map(scaleWallRect),
-  ...WORK_A_DESKS.walls.map(scaleWallRect),
+  // Keep the horizontal cubicle dividers, but omit the vertical divider in
+  // Work Zone A: it crossed the top doorway and left less than one player
+  // diameter of usable clearance.
+  ...WORK_A_DESKS.walls.filter((wall) => wall.w > wall.h).map(scaleWallRect),
   ...WORK_B_DESKS.walls.map(scaleWallRect),
 ];
 
@@ -534,7 +537,8 @@ export type RoomPropKind =
   | "window"
   | "wall-clock"
   | "bulletin-board"
-  | "water-cooler";
+  | "water-cooler"
+  | "report-terminal";
 export interface RoomPropDef {
   id: string;
   x: number;
@@ -561,6 +565,7 @@ const ROOM_PROPS_RAW: RoomPropDef[] = [
 
   // Work Zone A
   { id: "worka-switch", x: 950, y: 2020, kind: "light-switch" },
+  { id: "worka-report", x: 820, y: 2140, kind: "report-terminal" },
 
   // Meeting room — whiteboard (decoy gimmick's anchor) + chairs around the
   // conference table.

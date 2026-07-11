@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "decoy-camera-v2",
+    release: "workzone-lightfix-v3",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

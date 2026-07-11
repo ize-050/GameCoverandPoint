@@ -1631,6 +1631,20 @@ export class GameScreen implements Screen {
         group.add(base, stand, screen);
         obj = group;
         y = 0;
+      } else if (prop.kind === "report-terminal") {
+        const group = new THREE.Group();
+        const pedestal = new THREE.Mesh(new THREE.BoxGeometry(18 * S, 26 * S, 14 * S), new THREE.MeshStandardMaterial({ color: 0x1e3a5f }));
+        pedestal.position.y = 13 * S;
+        const screen = new THREE.Mesh(
+          new THREE.BoxGeometry(22 * S, 15 * S, 3 * S),
+          new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x0891b2, emissiveIntensity: 0.75 })
+        );
+        screen.position.set(0, 30 * S, -5 * S);
+        const tray = new THREE.Mesh(new THREE.BoxGeometry(20 * S, 2 * S, 16 * S), new THREE.MeshStandardMaterial({ color: 0xe2e8f0 }));
+        tray.position.set(0, 22 * S, 3 * S);
+        group.add(pedestal, screen, tray);
+        obj = group;
+        y = 0;
       } else if (prop.kind === "sink") {
         const group = new THREE.Group();
         const stand = new THREE.Mesh(new THREE.BoxGeometry(16 * S, 20 * S, 12 * S), counterMat);
@@ -1781,9 +1795,11 @@ export class GameScreen implements Screen {
     for (const room of ROOMS) {
       // Each room gets its OWN material instance (not shared) so one room's
       // fade-in/out animates independently of every other dark room.
-      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(room.w, WALL_HEIGHT, room.h), mat);
-      mesh.position.set(room.x + room.w / 2, WALL_HEIGHT / 2, room.y + room.h / 2);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(room.w, room.h), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(room.x + room.w / 2, WALL_HEIGHT + 4, room.y + room.h / 2);
+      mesh.renderOrder = 50;
       mesh.visible = false;
       this.scene.add(mesh);
       this.darkRoomOverlays.set(room.id, { mesh, opacity: 0 });

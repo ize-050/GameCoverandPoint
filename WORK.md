@@ -230,3 +230,14 @@ git status
 - หลังเก็บ ไอเท็มที่ถือมี emoji ลอยเหนือผู้เล่นและ HUD pattern เฉพาะ Smoke/Decoy/Stun/Sprint
 - Hider กด C เพื่อ cycle กล้องไปดูเพื่อนที่ยังเล่นอยู่เป็นเวลา 4 วินาที โดยไม่ย้ายตัวละคร
 - ทดสอบ Decoy ด้วยสอง client แล้วทั้ง Hider และ Seeker ได้ payload เดียวกัน
+
+## Work Zone A Access และ Stable Lights
+
+- พบ cubicle partition แนวตั้งตัดผ่าน top doorway ของ Work Zone A ทำให้ช่องเดินแคบเกือบเท่าตัวละคร
+- ตัด collision ของ divider แนวตั้งดังกล่าวออก แต่เก็บ horizontal cubicle dividers ไว้
+- ตรวจ path ผ่าน top doorway เป็นช่วงต่อเนื่องแล้วไม่มี collision
+- ย้าย `SUBMIT THE REPORT` ออกจาก light switch ไปยัง prop ใหม่ `worka-report`
+- เพิ่ม Report Terminal ที่มี pedestal, document tray และจอ cyan เรืองแสง
+- ตรวจตำแหน่ง Report Terminal ฝั่ง server แล้วไม่ชนกำแพง
+- เปลี่ยน dark-room overlay จาก transparent 3D box หกด้านเป็น plane เดียวเหนือห้อง
+- ลดปัญหา transparent sorting/z-fighting ที่ทำให้ไฟดูเหมือนกระพริบระหว่าง fade
