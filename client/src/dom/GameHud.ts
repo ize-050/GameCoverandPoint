@@ -40,6 +40,7 @@ export class GameHud {
   private timerEl: HTMLDivElement;
   private inspectsEl: HTMLDivElement;
   private relocateEl: HTMLDivElement;
+  private scanCooldownEl: HTMLDivElement;
   private roleBannerEl: HTMLDivElement;
   private blackoutEl: HTMLDivElement;
   private dazedEl: HTMLDivElement;
@@ -62,6 +63,7 @@ export class GameHud {
       <div id="hudTimer" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:26px;font-weight:800;color:#fff;display:none;align-items:center;gap:6px;"></div>
       <div id="hudInspects" style="position:absolute;top:58px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#fbbf24;background:#00000088;padding:4px 10px;border-radius:8px;display:none;align-items:center;gap:6px;"></div>
       <div id="hudRelocate" style="position:absolute;top:92px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#4ade80;background:#00000088;padding:4px 12px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
+      <div id="hudScanCooldown" style="position:absolute;top:126px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:#22d3ee;background:#00000088;padding:4px 10px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
       <div id="hudFeedback" style="position:absolute;top:20%;left:50%;transform:translateX(-50%);font-size:18px;color:#ffe066;background:#000000aa;padding:10px 16px;border-radius:10px;text-align:center;display:none;align-items:center;gap:8px;justify-content:center;"></div>
       <div id="hudRoleBanner" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;">
         <div style="background:#000000d9;padding:30px 50px;border-radius:16px;font-size:30px;color:#fff;text-align:center;display:flex;align-items:center;gap:14px;"></div>
@@ -84,6 +86,7 @@ export class GameHud {
     this.timerEl = this.root.querySelector("#hudTimer") as HTMLDivElement;
     this.inspectsEl = this.root.querySelector("#hudInspects") as HTMLDivElement;
     this.relocateEl = this.root.querySelector("#hudRelocate") as HTMLDivElement;
+    this.scanCooldownEl = this.root.querySelector("#hudScanCooldown") as HTMLDivElement;
     this.feedbackEl = this.root.querySelector("#hudFeedback") as HTMLDivElement;
     this.roleBannerEl = this.root.querySelector("#hudRoleBanner") as HTMLDivElement;
     this.blackoutEl = this.root.querySelector("#hudBlackout") as HTMLDivElement;
@@ -156,6 +159,18 @@ export class GameHud {
       role === "hider"
         ? `${icon("run", { size: 15 })} ภารกิจ: ย้ายที่ซ่อนตอนนี้! (+15 แต้ม)`
         : `${icon("eyes", { size: 15 })} คนซ่อนกำลังโยกย้าย...`;
+  }
+
+  // Seeker's scan (F) cooldown — hidden while ready (the hint pill already
+  // says "press F"), shown as a countdown once used so it's obvious why F
+  // is doing nothing.
+  setScanCooldown(remainingSec: number) {
+    if (remainingSec <= 0) {
+      this.scanCooldownEl.style.display = "none";
+      return;
+    }
+    this.scanCooldownEl.style.display = "flex";
+    this.scanCooldownEl.innerHTML = `${icon("clock", { size: 13 })} สแกนพร้อมใช้อีก ${remainingSec} วิ`;
   }
 
   // Contextual "what does SPACE do right now" prompt — without this, nothing

@@ -209,6 +209,12 @@ export class GameScreen implements Screen {
   // timer only, matching the world-space shadow reveal's same approach.
   private traceRevealUntil = 0;
   private traceRevealPoints: { x: number; y: number }[] = [];
+  // Client-predicted scan cooldown/origin — the server enforces the real
+  // cooldown independently (see handleScanPulse), this is only so the HUD
+  // can show a countdown and the radius ring can be drawn without waiting
+  // on a round-trip for a press that's going to be silently rejected anyway.
+  private scanCooldownUntil = 0;
+  private lastScanOrigin: { x: number; z: number } | null = null;
   private smokeItemMeshes = new Map<string, THREE.Object3D>();
   private trapMeshes = new Map<string, THREE.Object3D>();
   private missionMarkers = new Map<string, THREE.Object3D>();
@@ -295,6 +301,8 @@ export class GameScreen implements Screen {
     this.prevDazed = false;
     this.traceRevealUntil = 0;
     this.traceRevealPoints = [];
+    this.scanCooldownUntil = 0;
+    this.lastScanOrigin = null;
     this.hud?.destroy();
     this.hud = undefined;
     this.minimap?.destroy();
@@ -357,7 +365,12 @@ export class GameScreen implements Screen {
           if (keyboard.justDown("KeyC")) this.cycleTeammateCamera();
         }
         if (this.myPlayer.role === "seeker") {
-          if (keyboard.justDown("KeyF")) this.room!.send("scanPulse");
+          if (keyboard.justDown("KeyF") && performance.now() >= this.scanCooldownUntil) {
+            this.scanCooldownUntil = performance.now() + GAME_CONFIG.SCAN_COOLDOWN_MS;
+            const pos = this.localPlayer.character.position;
+            this.lastScanOrigin = { x: pos.x, z: pos.z };
+            this.room!.send("scanPulse");
+          }
         }
       }
     }
@@ -449,6 +462,8 @@ export class GameScreen implements Screen {
     this.hud.setMissions(activeMissions, completedMissions, this.myPlayer?.role === "hider" && phase === "seek" && activeMissions.length > 0);
     const showSeekerMission = this.myPlayer?.role === "seeker" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
     this.hud.setSeekerMission(!!showSeekerMission);
+    const scanRemainingSec = this.myPlayer?.role === "seeker" ? Math.ceil(Math.max(0, this.scanCooldownUntil - performance.now()) / 1000) : 0;
+    this.hud.setScanCooldown(scanRemainingSec);
 
     this.hud.setHint(this.computeHint(phase));
 
@@ -585,6 +600,8 @@ export class GameScreen implements Screen {
     // rendering, just different point counts/duration.
     const offScanResult = room.onMessage("scanResult", (msg: RevealPingMessage) => {
       this.playRevealBeacons(msg.points, msg.durationMs);
+      const origin = this.lastScanOrigin ?? { x: this.localPlayer?.character.position.x ?? 0, z: this.localPlayer?.character.position.z ?? 0 };
+      this.playScanRing(origin.x, origin.z, msg.points.length > 0);
     });
     this.unsubs.push(offScanResult);
 
@@ -908,6 +925,35 @@ export class GameScreen implements Screen {
         .onComplete(cleanup)
         .start();
     }
+  }
+
+  // Expanding ground ring showing exactly which area the scan covered — red
+  // if it caught someone, cyan if the area was clear, so the seeker can read
+  // the result at a glance instead of only seeing hits (or nothing at all).
+  private playScanRing(centerX: number, centerZ: number, hasHit: boolean) {
+    const radius = GAME_CONFIG.SCAN_RADIUS_PX;
+    const color = hasHit ? 0xef4444 : 0x22d3ee;
+    const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(radius - 5, radius, 64), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(centerX, 2, centerZ);
+    ring.scale.setScalar(0.05);
+    this.scene.add(ring);
+
+    const cleanup = () => {
+      this.scene.remove(ring);
+      ring.geometry.dispose();
+      ringMat.dispose();
+    };
+    new TWEEN.Tween({ scale: 0.05, opacity: 0.9 })
+      .to({ scale: 1, opacity: 0 }, 900)
+      .easing(TWEEN.Easing.Cubic.Out)
+      .onUpdate((state) => {
+        ring.scale.setScalar(state.scale);
+        ringMat.opacity = state.opacity;
+      })
+      .onComplete(cleanup)
+      .start();
   }
 
   private showEmoteAbove(sessionId: string, id: number) {
