@@ -149,7 +149,8 @@
 - ตรวจ production server แล้วว่า:
   - Player schema มี `heldItem`
   - ห้องหนึ่งคนยังอยู่ phase `lobby`
-  - Host สามารถเริ่มรอบคนเดียวได้ใน solo test mode
+- Host สามารถเริ่มรอบคนเดียวได้ใน solo test mode
+- Health endpoint แสดง `release` และ `minPlayers` เพื่อยืนยันว่า Render ใช้ revision ใหม่
 
 ## หมายเหตุจาก Dependency Audit
 

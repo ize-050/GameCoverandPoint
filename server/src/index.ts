@@ -4,13 +4,20 @@ import cors from "cors";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./rooms/GameRoom.js";
+import { GAME_CONFIG } from "./config/gameConfig.js";
 
 const PORT = Number(process.env.PORT) || 2567;
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) =>
+  res.json({
+    ok: true,
+    release: "solo-visual-v2",
+    minPlayers: GAME_CONFIG.MIN_PLAYERS,
+  })
+);
 
 const httpServer = http.createServer(app);
 
