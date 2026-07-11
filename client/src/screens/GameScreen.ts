@@ -9,6 +9,7 @@ import {
   DECORATIONS,
   ROOMS,
   ROOM_PROPS,
+  ROOM_VISUALS,
   CEILING_LIGHTS,
   SMOKE_ITEM_SPAWNS,
   pointInRoom,
@@ -938,13 +939,177 @@ export class GameScreen implements Screen {
     this.scene.add(this.sunLight);
 
     this.buildGround();
+    this.buildRoomVisuals();
     this.buildWalls();
     this.buildCoverPoints();
     this.buildDecorations();
+    this.buildOfficeSetDressing();
     this.buildRoomProps();
     this.buildCeilingLights();
     this.buildDarkRoomOverlays();
     this.buildSmokeItems();
+  }
+
+  private buildOfficeSetDressing() {
+    const box = (x: number, z: number, w: number, h: number, d: number, color: number, y = h / 2, emissive = 0) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: emissive ? 0.65 : 0, roughness: 0.72 })
+      );
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+      return mesh;
+    };
+    const cylinder = (x: number, z: number, radius: number, height: number, color: number, y = height / 2) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, height, 12),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.68 })
+      );
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+      return mesh;
+    };
+    const room = (id: string) => ROOMS.find((r) => r.id === id)!;
+    const at = (id: string, fx: number, fz: number) => {
+      const r = room(id);
+      return { x: r.x + r.w * fx, z: r.y + r.h * fz };
+    };
+
+    // Server lab: extra rack bank, patch panels, glowing status LEDs and cable trays.
+    for (let i = 0; i < 4; i++) {
+      const p = at("server", 0.2 + i * 0.18, 0.2);
+      box(p.x, p.z, 30, 48, 18, 0x172033);
+      for (let led = 0; led < 4; led++) box(p.x + 10, p.z - 9.3, 3, 2, 1, 0x22d3ee, 12 + led * 7, 0x22d3ee);
+    }
+    {
+      const r = room("server");
+      box(r.x + r.w / 2, r.y + r.h * 0.72, r.w * 0.62, 3, 8, 0x0f172a, 4);
+    }
+
+    // Lounge: coffee tables, lamps, side cabinets and planters make it feel occupied.
+    for (const [fx, fz] of [[0.3, 0.63], [0.68, 0.63]] as const) {
+      const p = at("lounge", fx, fz);
+      cylinder(p.x, p.z, 16, 8, 0xb77945);
+      cylinder(p.x + 11, p.z - 5, 4, 5, 0xf8fafc, 10);
+    }
+    for (const fx of [0.16, 0.84]) {
+      const p = at("lounge", fx, 0.35);
+      cylinder(p.x, p.z, 7, 30, 0x7c4a2d);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(13, 13, 16, 1, true), new THREE.MeshStandardMaterial({ color: 0xffd6a5, emissive: 0xfb923c, emissiveIntensity: 0.28 }));
+      shade.position.set(p.x, 36, p.z);
+      this.scene.add(shade);
+    }
+
+    // Restroom: tiled walk strips, vanity counter, soap dispensers and waste bins.
+    {
+      const r = room("toilet");
+      for (let i = 0; i < 6; i++) box(r.x + r.w * (0.14 + i * 0.14), r.y + r.h * 0.55, r.w * 0.1, 0.7, 5, 0x8be1ef, 0.8);
+      const p = at("toilet", 0.25, 0.78);
+      box(p.x, p.z, 70, 22, 22, 0xe5eef2);
+      box(p.x - 20, p.z - 12, 8, 12, 5, 0x38bdf8, 28);
+      cylinder(p.x + 45, p.z, 8, 18, 0x64748b);
+    }
+
+    // Work zones: monitor pairs, document trays, mugs and filing islands.
+    for (const id of ["work_a", "work_b"] as const) {
+      const style = ROOM_VISUALS[id];
+      for (let row = 0; row < 2; row++) {
+        for (let col = 0; col < 3; col++) {
+          const p = at(id, 0.22 + col * 0.27, 0.28 + row * 0.38);
+          box(p.x, p.z, 20, 13, 3, 0x111827, 25);
+          box(p.x - 13, p.z + 7, 12, 2, 9, style.accent, 17);
+          cylinder(p.x + 15, p.z + 8, 3.5, 8, col % 2 ? 0xf8fafc : style.accent, 20);
+        }
+      }
+    }
+
+    // Meeting room: projector, presentation screen, conference phone and notebooks.
+    {
+      const r = room("meeting");
+      const c = at("meeting", 0.5, 0.5);
+      box(c.x, r.y + 16, r.w * 0.55, 30, 3, 0xf8fafc, 42);
+      box(c.x, c.z, 20, 6, 14, 0x1f2937, 22);
+      for (const dx of [-45, -20, 20, 45]) box(c.x + dx, c.z + 16, 17, 1.5, 11, dx < 0 ? 0xfde68a : 0xfda4af, 19);
+      const projector = box(c.x, c.z - 65, 24, 8, 18, 0xe2e8f0, 55);
+      projector.rotation.y = Math.PI / 2;
+    }
+
+    // Reception: queue posts, logo wall, parcel stack and visitor seating markers.
+    {
+      const r = room("reception");
+      for (const fx of [0.28, 0.5, 0.72]) {
+        const p = at("reception", fx, 0.58);
+        cylinder(p.x, p.z, 3, 24, 0xd4a72c);
+      }
+      box(r.x + r.w / 2, r.y + 12, r.w * 0.62, 34, 3, 0x172033, 48);
+      box(r.x + r.w / 2, r.y + 10, r.w * 0.34, 10, 4, 0xfacc15, 48, 0xfacc15);
+      const p = at("reception", 0.82, 0.78);
+      box(p.x, p.z, 18, 18, 18, 0xb77945);
+      box(p.x + 13, p.z + 5, 15, 13, 15, 0xd6a760);
+    }
+
+    // Phone booth: desk phone, acoustic panels and a tiny status lamp.
+    {
+      const r = room("phonebooth");
+      const c = at("phonebooth", 0.5, 0.5);
+      box(c.x, c.z, 18, 7, 10, 0x111827, 25);
+      for (let i = 0; i < 3; i++) box(r.x + 8, r.y + 16 + i * 28, 3, 20, 18, i % 2 ? 0xdb2777 : 0x831843, 22);
+      cylinder(c.x + 14, c.z - 7, 3, 9, 0xf472b6, 30);
+    }
+  }
+
+  private buildRoomVisuals() {
+    for (const room of ROOMS) {
+      const style = ROOM_VISUALS[room.id];
+      if (!style) continue;
+
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(Math.max(1, room.w - 14), Math.max(1, room.h - 14)),
+        new THREE.MeshStandardMaterial({ color: style.floor, roughness: 0.82, metalness: room.id === "server" ? 0.2 : 0.02 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(room.x + room.w / 2, 0.35, room.y + room.h / 2);
+      this.scene.add(floor);
+
+      const borderMaterial = new THREE.MeshStandardMaterial({ color: style.accent, emissive: style.accent, emissiveIntensity: 0.18 });
+      const thickness = 7;
+      const borderY = 0.9;
+      const edges = [
+        new THREE.Mesh(new THREE.BoxGeometry(room.w, 1.8, thickness), borderMaterial),
+        new THREE.Mesh(new THREE.BoxGeometry(room.w, 1.8, thickness), borderMaterial),
+        new THREE.Mesh(new THREE.BoxGeometry(thickness, 1.8, room.h), borderMaterial),
+        new THREE.Mesh(new THREE.BoxGeometry(thickness, 1.8, room.h), borderMaterial),
+      ];
+      edges[0].position.set(room.x + room.w / 2, borderY, room.y + thickness / 2);
+      edges[1].position.set(room.x + room.w / 2, borderY, room.y + room.h - thickness / 2);
+      edges[2].position.set(room.x + thickness / 2, borderY, room.y + room.h / 2);
+      edges[3].position.set(room.x + room.w - thickness / 2, borderY, room.y + room.h / 2);
+      this.scene.add(...edges);
+
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 512;
+      labelCanvas.height = 96;
+      const ctx = labelCanvas.getContext("2d")!;
+      ctx.fillStyle = "rgba(8,15,25,.86)";
+      ctx.roundRect(8, 8, 496, 80, 18);
+      ctx.fill();
+      ctx.strokeStyle = `#${style.accent.toString(16).padStart(6, "0")}`;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 34px Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(style.label, 256, 49);
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false }));
+      label.scale.set(Math.min(170, room.w * 0.55), 32, 1);
+      label.position.set(room.x + room.w / 2, 58, room.y + 18);
+      this.scene.add(label);
+
+      const glow = new THREE.PointLight(style.accent, room.id === "phonebooth" ? 0.35 : 0.22, Math.max(room.w, room.h) * 0.65, 2);
+      glow.position.set(room.x + room.w / 2, 75, room.y + room.h / 2);
+      this.scene.add(glow);
+    }
   }
 
   private buildGround() {
@@ -959,8 +1124,17 @@ export class GameScreen implements Screen {
   }
 
   private buildWalls() {
-    const mat = new THREE.MeshStandardMaterial({ color: 0xcfd4dc });
     for (const wall of WALLS) {
+      const cx = wall.x + wall.w / 2;
+      const cz = wall.y + wall.h / 2;
+      const owner = ROOMS.find((room) => pointInRoom(cx, cz, room));
+      const style = owner ? ROOM_VISUALS[owner.id] : undefined;
+      const mat = new THREE.MeshStandardMaterial({
+        color: style?.wall ?? 0xcfd4dc,
+        roughness: 0.78,
+        emissive: style?.accent ?? 0x000000,
+        emissiveIntensity: style ? 0.025 : 0,
+      });
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(wall.w, WALL_HEIGHT, wall.h), mat);
       mesh.position.set(wall.x + wall.w / 2, WALL_HEIGHT / 2, wall.y + wall.h / 2);
       this.scene.add(mesh);
@@ -1068,6 +1242,7 @@ export class GameScreen implements Screen {
       obj.position.x = cp.x;
       obj.position.z = cp.y;
       this.scene.add(obj);
+      this.addFurnitureAccent(cp.x, cp.y, 17 * S);
 
       // Subtle idle sway so cover points read as livelier props rather than
       // static scenery. Deliberately NOT reflecting occupancy visually —
@@ -1095,6 +1270,7 @@ export class GameScreen implements Screen {
       model.scale.setScalar(FURNITURE_MODEL_SCALE);
       model.position.copy(obj.position);
       model.position.y = 0;
+      this.tintFurnitureForRoom(model, model.position.x, model.position.z);
       this.scene.add(model);
       this.scene.remove(obj);
       disposeObject3D(obj);
@@ -1284,6 +1460,17 @@ export class GameScreen implements Screen {
       obj.position.y = y;
       obj.position.z = prop.y;
       this.scene.add(obj);
+      const propRoom = ROOMS.find((r) => pointInRoom(prop.x, prop.y, r));
+      const propStyle = propRoom ? ROOM_VISUALS[propRoom.id] : undefined;
+      if (propStyle) {
+        const marker = new THREE.Mesh(
+          new THREE.RingGeometry(13 * S, 17 * S, 24),
+          new THREE.MeshBasicMaterial({ color: propStyle.accent, transparent: true, opacity: 0.42, side: THREE.DoubleSide })
+        );
+        marker.rotation.x = -Math.PI / 2;
+        marker.position.set(prop.x, 0.75, prop.y);
+        this.scene.add(marker);
+      }
       this.roomPropModelTargets.push({ id: prop.id, kind: prop.kind, obj });
     }
 
@@ -1296,11 +1483,46 @@ export class GameScreen implements Screen {
       if (!model) continue;
       model.scale.setScalar(FURNITURE_MODEL_SCALE);
       model.position.set(obj.position.x, 0, obj.position.z);
+      this.tintFurnitureForRoom(model, model.position.x, model.position.z);
       this.scene.add(model);
       this.scene.remove(obj);
       disposeObject3D(obj);
     }
     this.roomPropModelTargets = [];
+  }
+
+  private addFurnitureAccent(x: number, z: number, radius: number) {
+    const owner = ROOMS.find((room) => pointInRoom(x, z, room));
+    const style = owner ? ROOM_VISUALS[owner.id] : undefined;
+    if (!style) return;
+    const marker = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 24),
+      new THREE.MeshBasicMaterial({ color: style.accent, transparent: true, opacity: 0.13, depthWrite: false })
+    );
+    marker.rotation.x = -Math.PI / 2;
+    marker.position.set(x, 0.55, z);
+    this.scene.add(marker);
+  }
+
+  private tintFurnitureForRoom(root: THREE.Object3D, x: number, z: number) {
+    const owner = ROOMS.find((room) => pointInRoom(x, z, room));
+    const style = owner ? ROOM_VISUALS[owner.id] : undefined;
+    if (!style) return;
+    const accent = new THREE.Color(style.accent);
+    root.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const wasArray = Array.isArray(obj.material);
+      const materials = wasArray ? obj.material : [obj.material];
+      const tinted = materials.map((source: THREE.Material) => {
+        const material = source.clone();
+        if (material instanceof THREE.MeshStandardMaterial) {
+          material.color.lerp(accent, 0.16);
+          material.roughness = Math.min(1, material.roughness + 0.08);
+        }
+        return material;
+      });
+      obj.material = wasArray ? tinted : tinted[0];
+    });
   }
 
   // Hanging pendant lights — purely ambient, reinforces "indoors under

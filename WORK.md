@@ -170,6 +170,25 @@
 - แยก Vite bundle เพราะ production bundle ปัจจุบันมีขนาดมากกว่า 500 kB
 - วางแผนอัปเดต dependency หลังตรวจ breaking changes
 
+## Visual Pass — Room Identity และ Office Set Dressing
+
+- เพิ่มสีพื้น, สีขอบ, สีผนัง, ป้าย และ accent light แยกครบทุกห้อง
+- กำหนด palette กลางใน `ROOM_VISUALS` เพื่อให้โลก 3D และ minimap ใช้สีตรงกัน
+- Server Lab: เพิ่มตู้ rack, patch panel, status LED และ cable tray
+- Lounge: เพิ่ม coffee table, แก้ว, floor lamp และมุมนั่งพัก
+- Restroom: เพิ่มแนวกระเบื้อง, vanity counter, soap dispenser และถัง
+- Work Zone A/B: เพิ่ม monitor, document tray, แก้ว และของบนโต๊ะ พร้อมคนละโทนสี
+- Meeting Room: เพิ่ม presentation screen, projector, conference phone และสมุดประชุม
+- Reception: เพิ่ม queue post, logo wall, parcel stack และพื้นที่รับแขก
+- Phone Booth: เพิ่ม desk phone, acoustic panel และ status lamp
+- เฟอร์นิเจอร์ GLB รับสี accent ของห้องแบบอ่อน ๆ โดยยังรักษา texture เดิม
+- เพิ่ม marker ใต้ prop/cover ให้แต่ละห้องอ่านง่ายขึ้นโดยไม่เปิดเผย occupancy
+- ผนังใช้สีเฉพาะห้อง ส่วนทางเดินกลางยังเป็นโทนกลางสำหรับ readability
+- Minimap ใช้สีเดียวกับห้องในโลก 3D
+- Minimap มุมขวาบนคลิกเพื่อขยาย/ย่อได้ และยังรองรับปุ่ม M
+- คลิกฉากหลังของ minimap ขนาดใหญ่เพื่อปิดได้
+- Visual ทั้งหมดเป็น cosmetic ไม่เปลี่ยน collision, spawn หรือ gameplay logic
+
 ## คำสั่งตรวจสอบก่อน Deploy
 
 ```bash
@@ -178,4 +197,3 @@ npm run build --prefix client
 git diff --check
 git status
 ```
-

@@ -1,4 +1,4 @@
-import { ROOMS } from "../../../shared/mapLayout";
+import { ROOMS, ROOM_VISUALS } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import type { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
 
@@ -25,17 +25,26 @@ export class Minimap {
 
     this.canvas = document.createElement("canvas");
     this.canvas.style.cssText =
-      "position:fixed;z-index:7;border-radius:10px;border:2px solid rgba(255,255,255,0.25);background:#141a24;";
+      "position:fixed;z-index:7;border-radius:10px;border:2px solid rgba(255,255,255,0.35);background:#141a24;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.35);";
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext("2d")!;
+    this.canvas.title = "คลิกเพื่อขยาย/ย่อแผนที่ (M)";
+    this.canvas.addEventListener("click", this.toggle);
+    this.backdrop.addEventListener("click", this.collapse);
 
     this.applyLayout();
   }
 
-  toggle() {
+  toggle = () => {
     this.expanded = !this.expanded;
     this.applyLayout();
-  }
+  };
+
+  private collapse = () => {
+    if (!this.expanded) return;
+    this.expanded = false;
+    this.applyLayout();
+  };
 
   private applyLayout() {
     const size = this.expanded ? EXPANDED_SIZE : COLLAPSED_SIZE;
@@ -76,6 +85,7 @@ export class Minimap {
       const rw = room.w * scaleX;
       const rh = room.h * scaleY;
       ctx.fillStyle = "rgba(148,163,184,0.25)";
+      ctx.fillStyle = ROOM_VISUALS[room.id]?.minimap ?? "rgba(148,163,184,0.25)";
       ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeStyle = "rgba(148,163,184,0.6)";
       ctx.lineWidth = 1;

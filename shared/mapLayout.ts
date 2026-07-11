@@ -31,6 +31,25 @@ export interface RoomSpec {
   doors: Door[];
 }
 
+export interface RoomVisualStyle {
+  floor: number;
+  accent: number;
+  wall: number;
+  minimap: string;
+  label: string;
+}
+
+export const ROOM_VISUALS: Record<string, RoomVisualStyle> = {
+  server: { floor: 0x173451, accent: 0x22d3ee, wall: 0x8ecae6, minimap: "#164e63", label: "SERVER LAB" },
+  lounge: { floor: 0x5a3a2b, accent: 0xfb923c, wall: 0xf3c892, minimap: "#9a3412", label: "LOUNGE" },
+  toilet: { floor: 0x244b5a, accent: 0x67e8f9, wall: 0xcaf0f8, minimap: "#155e75", label: "RESTROOM" },
+  work_a: { floor: 0x214a43, accent: 0x34d399, wall: 0xa7f3d0, minimap: "#065f46", label: "WORK ZONE A" },
+  meeting: { floor: 0x57312f, accent: 0xfb7185, wall: 0xfecdd3, minimap: "#9f1239", label: "MEETING" },
+  work_b: { floor: 0x40345c, accent: 0xa78bfa, wall: 0xddd6fe, minimap: "#5b21b6", label: "WORK ZONE B" },
+  reception: { floor: 0x59491f, accent: 0xfacc15, wall: 0xfef08a, minimap: "#a16207", label: "RECEPTION" },
+  phonebooth: { floor: 0x562342, accent: 0xf472b6, wall: 0xfbcfe8, minimap: "#9d174d", label: "PHONE BOOTH" },
+};
+
 const WALL_THICKNESS = 20;
 
 // Every hand-authored coordinate below (rooms, cover points, props, spawns)
