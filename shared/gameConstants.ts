@@ -40,5 +40,15 @@ export const GAME_CONFIG = {
   // Comedic toilet-use gimmick — short cooldown just to stop spam-triggering,
   // not a real strategic ability.
   TOILET_USE_COOLDOWN_MS: 4000,
+  // Smoke-bomb pickup (hider-only): scattered collectible items (see
+  // SMOKE_ITEM_SPAWNS in shared/mapLayout.ts), auto-picked-up by walking
+  // near one, carried until used near a seeker to daze them (slower move
+  // speed + a fogged screen) for a few seconds — a real scarce resource,
+  // unlike the always-available cooldown-gated decoy ability.
+  SMOKE_PICKUP_RANGE_PX: 30,
+  SMOKE_ITEM_RESPAWN_MS: 25000,
+  SMOKE_BLAST_RADIUS_PX: 110,
+  SMOKE_DAZE_DURATION_MS: 4000,
+  SMOKE_DAZE_SPEED_MULTIPLIER: 0.55,
   SCORE: { SURVIVE: 100, CATCH: 50, FIRST_CATCH_BONUS: 20, LAST_SURVIVOR_BONUS: 50, RELOCATE_BONUS: 15 },
 } as const;

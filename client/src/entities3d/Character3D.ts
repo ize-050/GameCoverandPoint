@@ -11,6 +11,12 @@ import { cloneCharacter, preloadCharacterModels } from "../loaders/characterMode
 const MODEL_SCALE = 17;
 const NAMEPLATE_Y = 50;
 const CROSSFADE_SECONDS = 0.15;
+// Radians/sec the character can turn — fast enough to feel responsive but
+// still a smooth sweep rather than an instant snap when reversing direction.
+const FACING_TURN_SPEED = 12;
+// Kenney's rig faces its local +Z by default; adjust this if a character
+// visibly walks backward/sideways relative to where it's actually heading.
+const FACING_OFFSET = 0;
 
 // A model swap (variant change, or the very first frame before the async
 // GLTF clone resolves) needs *some* visible geometry so a character never
@@ -34,6 +40,8 @@ export class Character3D {
   private currentVariant = "";
   private pendingAnim?: string;
   private oneShotUntil = 0;
+  private targetFacing = 0;
+  private hasFacing = false;
   private nameSprite: THREE.Sprite;
 
   constructor(appearance: CharacterAppearance, nickname: string) {
@@ -123,8 +131,24 @@ export class Character3D {
     this.oneShotUntil = performance.now() + durationMs;
   }
 
+  // Turns the character to face a movement direction, given as a world-space
+  // (dx, dz) vector — NOT a raw angle, so callers never need to know this
+  // class's forward-axis convention. Smoothly sweeps toward it (shortest
+  // way around) rather than snapping, so reversing direction turns instead
+  // of instantly flipping.
+  setFacing(dx: number, dz: number) {
+    if (dx === 0 && dz === 0) return;
+    this.targetFacing = Math.atan2(dx, dz) + FACING_OFFSET;
+    this.hasFacing = true;
+  }
+
   update(deltaSeconds: number) {
     this.mixer?.update(deltaSeconds);
+    if (this.hasFacing) {
+      const diff = Math.atan2(Math.sin(this.targetFacing - this.group.rotation.y), Math.cos(this.targetFacing - this.group.rotation.y));
+      const maxStep = FACING_TURN_SPEED * deltaSeconds;
+      this.group.rotation.y += Math.max(-maxStep, Math.min(maxStep, diff));
+    }
   }
 
   get position(): THREE.Vector3 {

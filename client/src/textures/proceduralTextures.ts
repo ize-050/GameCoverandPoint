@@ -421,3 +421,90 @@ export function generateReceptionDeskTexture(): THREE.CanvasTexture {
   ctx.fillRect(0, 0, size, size * 0.15);
   return toTexture(canvas);
 }
+
+// Wall-mounted window with venetian blinds — a hint of a sky tone behind
+// horizontal slats, reads as "this is an exterior wall" from across a room
+// instead of every wall feeling equally interior/windowless.
+export function generateWindowTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const { canvas, ctx } = makeCanvas(size, size);
+  ctx.fillStyle = rgba(0x6b7280, 1);
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = rgba(0xaed4e6, 1);
+  ctx.fillRect(4, 4, size - 8, size - 8);
+  ctx.strokeStyle = rgba(0xe6f4fb, 0.7);
+  ctx.lineWidth = 3;
+  for (let i = 1; i < 7; i++) {
+    const yy = 4 + ((size - 8) * i) / 7;
+    ctx.beginPath();
+    ctx.moveTo(4, yy);
+    ctx.lineTo(size - 4, yy);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = rgba(0x4b5563, 1);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(4, 4, size - 8, size - 8);
+  ctx.beginPath();
+  ctx.moveTo(size / 2, 4);
+  ctx.lineTo(size / 2, size - 4);
+  ctx.stroke();
+  return toTexture(canvas);
+}
+
+// Analog wall clock — plain white face, black ticks/hands, tiny detail but
+// exactly the kind of thing a real office corridor always has one of.
+export function generateWallClockTexture(): THREE.CanvasTexture {
+  const size = 32;
+  const { canvas, ctx } = makeCanvas(size, size);
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2 - 2;
+  ctx.fillStyle = rgba(0x2b2f36, 1);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = rgba(0xf5f5f0, 1);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgba(0x2b2f36, 1);
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - r * 0.55);
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + r * 0.35, cy + r * 0.1);
+  ctx.stroke();
+  return toTexture(canvas);
+}
+
+// Corkboard with a few pinned notices — the "office bulletin board" corner
+// every real workplace has, near a high-traffic spot (this game's reception).
+export function generateBulletinBoardTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const { canvas, ctx } = makeCanvas(size, size);
+  ctx.fillStyle = rgba(0x6b4a2f, 1);
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = rgba(0x8a6440, 0.5);
+  for (let i = 0; i < 40; i++) {
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1.5, 1.5);
+  }
+  const notices: [number, number, number][] = [
+    [8, 8, 0xfef3c7],
+    [30, 10, 0xdbeafe],
+    [12, 34, 0xfee2e2],
+    [34, 36, 0xffffff],
+  ];
+  for (const [x, y, color] of notices) {
+    ctx.fillStyle = rgba(color, 0.95);
+    ctx.fillRect(x, y, 20, 16);
+    ctx.fillStyle = rgba(0x991b1b, 0.9);
+    ctx.beginPath();
+    ctx.arc(x + 10, y + 2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = rgba(0x4a3320, 1);
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, size - 3, size - 3);
+  return toTexture(canvas);
+}

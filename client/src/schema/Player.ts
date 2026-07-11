@@ -14,6 +14,8 @@ export class Player extends Schema {
   @type("boolean") isHost: boolean = false;
   @type("number") inspectsRemaining: number = 0;
   @type("boolean") speedBoosted: boolean = false;
+  @type("boolean") hasSmokeBomb: boolean = false;
+  @type("boolean") isDazed: boolean = false;
 
   @type("string") characterVariant: string = "a";
 }

@@ -37,6 +37,9 @@ export class Player extends Schema {
   // Coffee-boost gimmick (break room). Doesn't reveal position, just a
   // temporary speed multiplier — safe unfiltered like isCaught.
   @type("boolean") speedBoosted: boolean = false;
+  // Smoke-bomb pickup item. Doesn't reveal position — safe unfiltered.
+  @type("boolean") hasSmokeBomb: boolean = false;
+  @type("boolean") isDazed: boolean = false;
 
   // Character customization (not in original spec, added on request) — one
   // of CHARACTER_VARIANTS in shared/messages.ts (Kenney "Blocky Characters"

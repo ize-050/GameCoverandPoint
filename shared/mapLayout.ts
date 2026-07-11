@@ -511,7 +511,11 @@ export type RoomPropKind =
   | "reception-desk"
   | "table"
   | "tv"
-  | "toilet-use";
+  | "toilet-use"
+  | "window"
+  | "wall-clock"
+  | "bulletin-board"
+  | "water-cooler";
 export interface RoomPropDef {
   id: string;
   x: number;
@@ -563,6 +567,19 @@ const ROOM_PROPS_RAW: RoomPropDef[] = [
   // Phone booth — small table + chair, a tiny detour nook.
   { id: "phonebooth-table", x: 2100, y: 780, kind: "table" },
   { id: "phonebooth-chair", x: 2100, y: 830, kind: "chair" },
+
+  // Office-realism pass — windows along the building's outer walls, plus a
+  // wall clock/bulletin board/water cooler in the reception hub and lounge
+  // (purely decorative, no gimmick — same treatment as chair/table).
+  { id: "window-server", x: 700, y: 540, kind: "window" },
+  { id: "window-lounge", x: 3200, y: 540, kind: "window" },
+  { id: "window-toilet", x: 5400, y: 540, kind: "window" },
+  { id: "window-worka", x: 340, y: 2400, kind: "window" },
+  { id: "window-workb", x: 340, y: 3660, kind: "window" },
+  { id: "window-meeting", x: 5730, y: 2400, kind: "window" },
+  { id: "reception-clock", x: 3550, y: 3700, kind: "wall-clock" },
+  { id: "reception-bulletin", x: 2900, y: 4260, kind: "bulletin-board" },
+  { id: "lounge-water-cooler", x: 2850, y: 1050, kind: "water-cooler" },
 ];
 
 export const ROOM_PROPS: RoomPropDef[] = ROOM_PROPS_RAW.map((p) => ({ ...p, x: scale(p.x), y: scale(p.y) }));
@@ -587,3 +604,21 @@ const CEILING_LIGHTS_RAW: { x: number; y: number }[] = [
 ];
 
 export const CEILING_LIGHTS: { x: number; y: number }[] = CEILING_LIGHTS_RAW.map(scaleXY);
+
+// Smoke-bomb pickups — scattered across the open cubicle floor (not inside
+// any specific room), a scarce resource hiders must walk over to collect,
+// distinct from the always-available cooldown-gated decoy ability.
+export interface SmokeItemSpawnDef {
+  id: string;
+  x: number;
+  y: number;
+}
+const SMOKE_ITEM_SPAWNS_RAW: SmokeItemSpawnDef[] = [
+  { id: "smoke1", x: 1000, y: 1700 },
+  { id: "smoke2", x: 4300, y: 1700 },
+  { id: "smoke3", x: 2500, y: 2200 },
+  { id: "smoke4", x: 3900, y: 2600 },
+  { id: "smoke5", x: 1150, y: 3550 },
+  { id: "smoke6", x: 4600, y: 3000 },
+];
+export const SMOKE_ITEM_SPAWNS: SmokeItemSpawnDef[] = SMOKE_ITEM_SPAWNS_RAW.map(scaleXY);

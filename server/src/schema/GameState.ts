@@ -16,6 +16,9 @@ export class GameState extends Schema {
   // `true`) means that room is currently dark. Any player can toggle any
   // room via its switch prop, capped at GAME_CONFIG.MAX_DARK_ROOMS at once.
   @type({ map: "boolean" }) darkRooms = new MapSchema<boolean>();
+  // Smoke-bomb pickups: presence of a spawn id key (value `true`) means
+  // that spot was already collected and is on cooldown until it respawns.
+  @type({ map: "boolean" }) collectedSmokeItems = new MapSchema<boolean>();
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: CoverPoint }) coverPoints = new MapSchema<CoverPoint>();
 }

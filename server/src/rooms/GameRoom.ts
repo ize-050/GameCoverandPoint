@@ -3,7 +3,16 @@ import { GameState } from "../schema/GameState.js";
 import { Player } from "../schema/Player.js";
 import { GAME_CONFIG } from "../config/gameConfig.js";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig.js";
-import { COVER_POINTS, ROOMS, ROOM_PROPS, SEEKER_SPAWN, randomHiderSpawn, collidesWithAnyWall, findRoomAt } from "../../../shared/mapLayout.js";
+import {
+  COVER_POINTS,
+  ROOMS,
+  ROOM_PROPS,
+  SEEKER_SPAWN,
+  SMOKE_ITEM_SPAWNS,
+  randomHiderSpawn,
+  collidesWithAnyWall,
+  findRoomAt,
+} from "../../../shared/mapLayout.js";
 import { CoverPoint } from "../schema/CoverPoint.js";
 import {
   ROOM_CODE_LENGTH,
@@ -101,6 +110,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("emote", (client, message: EmoteMessage) => this.handleEmote(client, message));
     this.onMessage("decoy", (client) => this.handleDecoy(client));
     this.onMessage("useProp", (client, message: UsePropMessage) => this.handleUseProp(client, message));
+    this.onMessage("useSmoke", (client) => this.handleUseSmoke(client));
 
     this.clock.setInterval(() => this.tick(), 1000);
 
@@ -284,6 +294,8 @@ export class GameRoom extends Room<GameState> {
       player.coverPointId = "";
       player.inspectsRemaining = seekerSet.has(id) ? GAME_CONFIG.MAX_INSPECT_ATTEMPTS : 0;
       player.speedBoosted = false;
+      player.hasSmokeBomb = false;
+      player.isDazed = false;
     });
 
     this.previousSeekerIds = seekerSet;
@@ -303,6 +315,7 @@ export class GameRoom extends Room<GameState> {
     this.toiletUseCooldownUntil.clear();
     this.state.relocateActive = false;
     this.state.darkRooms.clear();
+    this.state.collectedSmokeItems.clear();
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
 
@@ -377,6 +390,24 @@ export class GameRoom extends Room<GameState> {
     this.lastMoveAt.set(client.sessionId, now);
 
     if (player.role === "seeker") this.checkServerRoomAlarm(client.sessionId, player);
+    else if (player.role === "hider") this.checkSmokeItemPickup(player);
+  }
+
+  // Auto-pickup on proximity (no SPACE needed — this is a scarce collectible,
+  // not a fixed-location gimmick prop) — at most one carried at a time, and
+  // a collected spot respawns after SMOKE_ITEM_RESPAWN_MS.
+  private checkSmokeItemPickup(player: Player) {
+    if (player.isCaught || player.hasSmokeBomb) return;
+    for (const spawn of SMOKE_ITEM_SPAWNS) {
+      if (this.state.collectedSmokeItems.has(spawn.id)) continue;
+      if (Math.hypot(player.x - spawn.x, player.y - spawn.y) > GAME_CONFIG.SMOKE_PICKUP_RANGE_PX) continue;
+      this.state.collectedSmokeItems.set(spawn.id, true);
+      player.hasSmokeBomb = true;
+      this.clock.setTimeout(() => {
+        this.state.collectedSmokeItems.delete(spawn.id);
+      }, GAME_CONFIG.SMOKE_ITEM_RESPAWN_MS);
+      return;
+    }
   }
 
   // Passive server-room gimmick: no interaction needed from either side —
@@ -634,6 +665,28 @@ export class GameRoom extends Room<GameState> {
     this.clock.setTimeout(() => {
       player.speedBoosted = false;
     }, GAME_CONFIG.COFFEE_BOOST_DURATION_MS);
+  }
+
+  // Smoke bomb: consumes the carried item, deploys at the hider's own
+  // current position (no aiming needed), broadcasts the visual puff to
+  // everyone, then dazes (slows + fogs the screen of) any seeker caught
+  // within the blast radius at that instant.
+  private handleUseSmoke(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "hider" || player.isCaught || !player.hasSmokeBomb) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    player.hasSmokeBomb = false;
+    this.clients.forEach((c) => c.send("smokeDeployed", { x: player.x, y: player.y }));
+
+    this.state.players.forEach((target) => {
+      if (target.role !== "seeker" || target.isCaught) return;
+      if (Math.hypot(target.x - player.x, target.y - player.y) > GAME_CONFIG.SMOKE_BLAST_RADIUS_PX) return;
+      target.isDazed = true;
+      this.clock.setTimeout(() => {
+        target.isDazed = false;
+      }, GAME_CONFIG.SMOKE_DAZE_DURATION_MS);
+    });
   }
 
   // Security monitor peek (reception): one-shot, targeted only at the

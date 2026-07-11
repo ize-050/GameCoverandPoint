@@ -10,6 +10,7 @@ export class GameState extends Schema {
   @type("string") roomCode: string = "";
   @type("boolean") relocateActive: boolean = false;
   @type({ map: "boolean" }) darkRooms = new MapSchema<boolean>();
+  @type({ map: "boolean" }) collectedSmokeItems = new MapSchema<boolean>();
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: CoverPoint }) coverPoints = new MapSchema<CoverPoint>();
 }

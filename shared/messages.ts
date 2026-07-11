@@ -116,3 +116,12 @@ export interface MonitorPeekMessage {
 export interface ToiletUseMessage {
   sessionId: string;
 }
+
+// server -> all clients (broadcast) — smoke bomb deployed at (x, y), pure
+// visual feedback (the puff cloud everyone sees); the actual daze effect
+// (Player.isDazed) is applied server-side directly to whichever seekers
+// were in range, not carried in this message.
+export interface SmokeDeployedMessage {
+  x: number;
+  y: number;
+}

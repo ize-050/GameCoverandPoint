@@ -41,8 +41,13 @@ export class RemotePlayer3D {
   }
 
   update(deltaSeconds: number) {
-    this.character.update(deltaSeconds);
     const pos = this.character.position;
+    const dx = this.targetX - pos.x;
+    const dz = this.targetZ - pos.z;
+    // Tiny residual jitter (server rounding, lerp settling) shouldn't spin
+    // the character to face it — only turn to face real movement.
+    if (Math.hypot(dx, dz) > 0.5) this.character.setFacing(dx, dz);
+    this.character.update(deltaSeconds);
     pos.x = THREE.MathUtils.lerp(pos.x, this.targetX, LERP_FACTOR);
     pos.z = THREE.MathUtils.lerp(pos.z, this.targetZ, LERP_FACTOR);
   }

@@ -74,6 +74,7 @@ const SFX = {
   emote: "/audio/sfx/emote.ogg",
   uiClick: "/audio/sfx/ui-click.ogg",
   toiletFlush: "/audio/sfx/toilet-flush.ogg",
+  smokePickup: "/audio/sfx/smoke-pickup.ogg",
 } as const;
 const ROUND_WIN_JINGLE = "/audio/jingles/round-win.ogg";
 
@@ -140,4 +141,14 @@ export function playUiClickSfx() {
 
 export function playToiletFlushSfx() {
   play(SFX.toiletFlush, { gain: 0.5 });
+}
+
+export function playSmokePickupSfx() {
+  play(SFX.smokePickup, { gain: 0.5 });
+}
+
+// Deployed smoke bomb — reuses the decoy-scare clip's startled-noise
+// character, since both are "something just happened, pay attention" cues.
+export function playSmokeDeploySfx() {
+  play(SFX.decoyScare, { gain: 0.6 });
 }

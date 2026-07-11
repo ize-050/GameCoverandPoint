@@ -15,6 +15,7 @@ export interface LocalMoveStatus {
   role: string;
   isGhost: boolean;
   speedBoosted: boolean;
+  isDazed: boolean;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -59,7 +60,11 @@ export class LocalPlayer3D {
     if (dx !== 0 || dz !== 0) {
       const len = Math.hypot(dx, dz);
       const baseSpeed = status.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
-      const speed = status.speedBoosted ? baseSpeed * GAME_CONFIG.COFFEE_BOOST_MULTIPLIER : baseSpeed;
+      const speed = status.speedBoosted
+        ? baseSpeed * GAME_CONFIG.COFFEE_BOOST_MULTIPLIER
+        : status.isDazed
+          ? baseSpeed * GAME_CONFIG.SMOKE_DAZE_SPEED_MULTIPLIER
+          : baseSpeed;
       const step = (speed * deltaMs) / 1000;
 
       const fromX = this.character.position.x;
@@ -76,6 +81,7 @@ export class LocalPlayer3D {
       this.character.position.x = resolved.x;
       this.character.position.z = resolved.y;
       anim = status.speedBoosted ? "sprint" : "walk";
+      this.character.setFacing(dx, dz);
     }
     this.character.playAnimation(anim);
 

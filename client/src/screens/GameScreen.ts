@@ -3,7 +3,17 @@ import * as TWEEN from "@tweenjs/tween.js";
 import type { Room } from "colyseus.js";
 import type { Screen, Navigate } from "../core/ScreenManager";
 import { GameState, Player, CoverPoint } from "../schema/GameState";
-import { WALLS, COVER_POINTS, DECORATIONS, ROOMS, ROOM_PROPS, CEILING_LIGHTS, pointInRoom, type RoomPropDef } from "../../../shared/mapLayout";
+import {
+  WALLS,
+  COVER_POINTS,
+  DECORATIONS,
+  ROOMS,
+  ROOM_PROPS,
+  CEILING_LIGHTS,
+  SMOKE_ITEM_SPAWNS,
+  pointInRoom,
+  type RoomPropDef,
+} from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import type {
@@ -18,6 +28,7 @@ import type {
   WrongRoomHintMessage,
   MonitorPeekMessage,
   ToiletUseMessage,
+  SmokeDeployedMessage,
 } from "../../../shared/messages";
 import {
   generateGroundTexture,
@@ -36,6 +47,9 @@ import {
   generateSinkTexture,
   generateMirrorTexture,
   generateReceptionDeskTexture,
+  generateWindowTexture,
+  generateWallClockTexture,
+  generateBulletinBoardTexture,
 } from "../textures/proceduralTextures";
 import { createReactionTexture } from "../textures/emote";
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
@@ -58,6 +72,8 @@ import {
   playServerAlarmSfx,
   playEmoteSfx,
   playToiletFlushSfx,
+  playSmokePickupSfx,
+  playSmokeDeploySfx,
 } from "../audio/sfx";
 import { musicPlayer } from "../audio/music";
 import { cloneFurniture, preloadFurnitureModels } from "../loaders/furnitureModels";
@@ -139,6 +155,14 @@ const MIN_CAMERA_ZOOM = 200;
 const MAX_CAMERA_ZOOM = 1400;
 const MOUSE_DRAG_SENSITIVITY = 0.006; // radians of orbit per pixel of horizontal drag
 const WHEEL_ZOOM_SENSITIVITY = 0.6; // world units of zoom per wheel-delta unit
+// Wheel input sets a TARGET zoom (see targetCameraZoom); the actual zoom
+// eases toward it every frame at this rate instead of snapping per tick —
+// a mouse notch (large deltaY) used to jump the view instantly.
+const ZOOM_EASE_RATE = 10;
+// How fast ambient/sun intensity and the darkness overlay fade toward their
+// target when a room's lights get toggled — slower than zoom, reads more
+// like eyes adjusting than a camera setting.
+const LIGHT_EASE_RATE = 5;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -161,6 +185,7 @@ export class GameScreen implements Screen {
   private followTarget = new THREE.Vector3(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
   private cameraAzimuth = ISO_AZIMUTH_DEFAULT;
   private cameraZoom = VIEW_SIZE;
+  private targetCameraZoom = VIEW_SIZE;
   private isDragging = false;
   private lastDragX = 0;
   private built = false;
@@ -170,6 +195,9 @@ export class GameScreen implements Screen {
   private myPlayer?: Player;
   private remotePlayers = new Map<string, RemotePlayer3D>();
   private prevHidden = new Map<string, boolean>();
+  private prevHasSmokeBomb = false;
+  private prevDazed = false;
+  private smokeItemMeshes = new Map<string, THREE.Object3D>();
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
   private stateChangeHandler = () => this.checkPhase();
@@ -179,7 +207,7 @@ export class GameScreen implements Screen {
   private prevDimForLights = false;
   private ambientLight!: THREE.AmbientLight;
   private sunLight!: THREE.DirectionalLight;
-  private darkRoomOverlays = new Map<string, THREE.Mesh>();
+  private darkRoomOverlays = new Map<string, { mesh: THREE.Mesh; opacity: number }>();
   // Real GLB furniture models load async; every cover point/prop starts as
   // the existing procedural generated-texture mesh (a perfectly good
   // fallback) and gets swapped for a real model once preloadFurnitureModels()
@@ -206,8 +234,7 @@ export class GameScreen implements Screen {
   };
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    this.cameraZoom = clamp(this.cameraZoom + e.deltaY * WHEEL_ZOOM_SENSITIVITY, MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
-    this.resize(window.innerWidth, window.innerHeight);
+    this.targetCameraZoom = clamp(this.targetCameraZoom + e.deltaY * WHEEL_ZOOM_SENSITIVITY, MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
   };
 
   constructor(renderer: THREE.WebGLRenderer, navigate: Navigate) {
@@ -247,6 +274,8 @@ export class GameScreen implements Screen {
     this.remotePlayers.forEach((p) => p.destroy());
     this.remotePlayers.clear();
     this.prevHidden.clear();
+    this.prevHasSmokeBomb = false;
+    this.prevDazed = false;
     this.hud?.destroy();
     this.hud = undefined;
     this.minimap?.destroy();
@@ -283,12 +312,23 @@ export class GameScreen implements Screen {
     if (keyboard.isDown("KeyQ")) this.cameraAzimuth -= CAMERA_ROTATE_SPEED * dt;
     if (keyboard.isDown("KeyE")) this.cameraAzimuth += CAMERA_ROTATE_SPEED * dt;
 
+    if (Math.abs(this.cameraZoom - this.targetCameraZoom) > 0.01) {
+      this.cameraZoom = THREE.MathUtils.lerp(this.cameraZoom, this.targetCameraZoom, Math.min(1, ZOOM_EASE_RATE * dt));
+      this.resize(window.innerWidth, window.innerHeight);
+    }
+
     if (this.room && this.localPlayer && this.myPlayer) {
       const isGhost = this.myPlayer.isCaught;
       const blackedOut = phase === "hide" && this.myPlayer.role === "seeker";
       const canMove = (phase === "hide" || phase === "seek") && !blackedOut && !this.myPlayer.isHidden;
 
-      this.localPlayer.update(dt * 1000, { canMove, role: this.myPlayer.role, isGhost, speedBoosted: this.myPlayer.speedBoosted });
+      this.localPlayer.update(dt * 1000, {
+        canMove,
+        role: this.myPlayer.role,
+        isGhost,
+        speedBoosted: this.myPlayer.speedBoosted,
+        isDazed: this.myPlayer.isDazed,
+      });
       this.followTarget.copy(this.localPlayer.character.position);
 
       // NOT gated on canMove — canMove excludes isHidden (so WASD doesn't
@@ -302,6 +342,7 @@ export class GameScreen implements Screen {
         });
         if (this.myPlayer.role === "hider") {
           if (keyboard.justDown("KeyF")) this.room!.send("decoy");
+          if (keyboard.justDown("KeyG") && this.myPlayer.hasSmokeBomb) this.room!.send("useSmoke");
         }
       }
     }
@@ -314,17 +355,26 @@ export class GameScreen implements Screen {
       this.minimap?.render({ x: pos.x, z: pos.z }, this.remotePlayers);
     }
 
-    this.updateDarkRoomOverlays();
+    this.updateDarkRoomOverlays(dt);
+    this.updateSmokeItems();
+    if (this.myPlayer && this.myPlayer.isDazed !== this.prevDazed) {
+      this.prevDazed = this.myPlayer.isDazed;
+      this.hud?.setDazed(this.myPlayer.isDazed);
+    }
     // Dark-room vision depends on both viewer AND target position, so it
     // can't rely solely on the reactive onChange-triggered recompute
     // elsewhere — cheap enough (at most ~9 remotes) to just redo every frame.
     this.refreshAllVisibility();
     // Universal light switch: dims for WHOEVER is standing in a dark room,
     // any role — unlike the old hider-only sabotage this replaces, which
-    // only dimmed the seeker's own view.
+    // only dimmed the seeker's own view. Eased toward the target each frame
+    // (was an instant snap) so a toggle reads as lights fading, not popping.
     const dimForLights = this.isStandingInDarkRoom();
-    this.ambientLight.intensity = dimForLights ? LIGHTS_OFF_AMBIENT_INTENSITY : BASE_AMBIENT_INTENSITY;
-    this.sunLight.intensity = dimForLights ? LIGHTS_OFF_SUN_INTENSITY : BASE_SUN_INTENSITY;
+    const targetAmbient = dimForLights ? LIGHTS_OFF_AMBIENT_INTENSITY : BASE_AMBIENT_INTENSITY;
+    const targetSun = dimForLights ? LIGHTS_OFF_SUN_INTENSITY : BASE_SUN_INTENSITY;
+    const lightEase = Math.min(1, LIGHT_EASE_RATE * dt);
+    this.ambientLight.intensity = THREE.MathUtils.lerp(this.ambientLight.intensity, targetAmbient, lightEase);
+    this.sunLight.intensity = THREE.MathUtils.lerp(this.sunLight.intensity, targetSun, lightEase);
     if (dimForLights !== this.prevDimForLights) {
       this.prevDimForLights = dimForLights;
       if (dimForLights) playLightsOffSfx();
@@ -393,6 +443,7 @@ export class GameScreen implements Screen {
         this.localPlayer = new LocalPlayer3D(this.scene, room, player.x, player.y, player.nickname, appearanceOf(player));
         const unsubSelf = player.onChange(() => {
           this.checkHideGimmick(sessionId, player);
+          this.checkSmokePickup(player);
           this.refreshAllVisibility();
         });
         this.unsubs.push(unsubSelf);
@@ -463,6 +514,12 @@ export class GameScreen implements Screen {
       if (msg.sessionId === this.room?.sessionId) this.hud?.showFeedback(`${icon("check", { size: 18 })} สดชื่น!`);
     });
     this.unsubs.push(offToiletUse);
+
+    const offSmokeDeployed = room.onMessage("smokeDeployed", (msg: SmokeDeployedMessage) => {
+      this.playSmokeEffect(msg.x, msg.y);
+      playSmokeDeploySfx();
+    });
+    this.unsubs.push(offSmokeDeployed);
 
     const offServerAlarm = room.onMessage("serverAlarm", (_msg: ServerAlarmMessage) => {
       this.hud?.showFeedback(`${icon("bell", { size: 18, color: "#f87171" })} มีคนหาเข้าห้อง Server!`);
@@ -548,6 +605,14 @@ export class GameScreen implements Screen {
       if (player.isHidden) playHideSfx();
       else playUnhideSfx();
     }
+  }
+
+  // Auto-pickup happens server-side purely from proximity (no SPACE), so the
+  // only way the client learns about it is reactively, off the local
+  // player's own onChange — same shape as checkHideGimmick above.
+  private checkSmokePickup(player: Player) {
+    if (!this.prevHasSmokeBomb && player.hasSmokeBomb) playSmokePickupSfx();
+    this.prevHasSmokeBomb = player.hasSmokeBomb;
   }
 
   private playHideGimmick(group: THREE.Group, hiding: boolean) {
@@ -637,6 +702,42 @@ export class GameScreen implements Screen {
         })
         .start();
     });
+  }
+
+  // Smoke bomb puff — a handful of soft gray spheres billowing outward and
+  // upward then fading, visible to every client (not just affected seekers)
+  // so the deploy itself always reads as a real event happening in the world.
+  private playSmokeEffect(x: number, z: number) {
+    const puffMat = new THREE.MeshBasicMaterial({ color: 0xcbd5e1, transparent: true, opacity: 0.75 });
+    for (let i = 0; i < 6; i++) {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 6), puffMat.clone());
+      const angle = (i / 6) * Math.PI * 2;
+      puff.position.set(x, 4, z);
+      this.scene.add(puff);
+
+      const target = {
+        x: x + Math.cos(angle) * 26,
+        y: 22 + Math.random() * 10,
+        z: z + Math.sin(angle) * 26,
+        scale: 0.4,
+        opacity: 0.75,
+      };
+      const state = { x, y: 4, z, scale: 0.4, opacity: 0.75 };
+      new TWEEN.Tween(state)
+        .to({ x: target.x, y: target.y, z: target.z, scale: 2.4, opacity: 0 }, 750 + Math.random() * 200)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .onUpdate(() => {
+          puff.position.set(state.x, state.y, state.z);
+          puff.scale.set(state.scale, state.scale, state.scale);
+          (puff.material as THREE.MeshBasicMaterial).opacity = state.opacity;
+        })
+        .onComplete(() => {
+          this.scene.remove(puff);
+          puff.geometry.dispose();
+          (puff.material as THREE.Material).dispose();
+        })
+        .start();
+    }
   }
 
   private showEmoteAbove(sessionId: string, id: number) {
@@ -744,6 +845,7 @@ export class GameScreen implements Screen {
     if (me.role === "hider") {
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
+      if (me.hasSmokeBomb) return "[G] ใช้ระเบิดควัน";
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
       if (!cp) return null;
       return cp.isOccupied ? "จุดนี้มีคนซ่อนอยู่แล้ว" : "[SPACE] ซ่อนที่นี่";
@@ -835,6 +937,7 @@ export class GameScreen implements Screen {
     this.buildRoomProps();
     this.buildCeilingLights();
     this.buildDarkRoomOverlays();
+    this.buildSmokeItems();
   }
 
   private buildGround() {
@@ -1051,6 +1154,9 @@ export class GameScreen implements Screen {
     const sinkTex = generateSinkTexture();
     const mirrorTex = generateMirrorTexture();
     const receptionDeskTex = generateReceptionDeskTexture();
+    const windowTex = generateWindowTexture();
+    const clockTex = generateWallClockTexture();
+    const bulletinTex = generateBulletinBoardTexture();
     const chairMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
     const chairLegMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
     const alarmMountMat = new THREE.MeshStandardMaterial({ color: 0xcfd4dc });
@@ -1139,6 +1245,29 @@ export class GameScreen implements Screen {
         // real fixture) — stays this small procedural marker permanently.
         obj = new THREE.Mesh(new THREE.CylinderGeometry(2 * S, 2 * S, 6 * S, 8), new THREE.MeshStandardMaterial({ color: 0xf5f5f0 }));
         y = 3 * S;
+      } else if (prop.kind === "window") {
+        obj = new THREE.Mesh(new THREE.BoxGeometry(44 * S, 34 * S, 2 * S), new THREE.MeshStandardMaterial({ map: windowTex }));
+        y = 34 * S;
+      } else if (prop.kind === "wall-clock") {
+        obj = new THREE.Mesh(new THREE.CircleGeometry(7 * S, 20), new THREE.MeshStandardMaterial({ map: clockTex }));
+        y = 40 * S;
+      } else if (prop.kind === "bulletin-board") {
+        obj = new THREE.Mesh(new THREE.BoxGeometry(34 * S, 26 * S, 2 * S), new THREE.MeshStandardMaterial({ map: bulletinTex }));
+        y = 32 * S;
+      } else if (prop.kind === "water-cooler") {
+        const group = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(7 * S, 8 * S, 20 * S, 10), new THREE.MeshStandardMaterial({ color: 0xe5e7eb }));
+        base.position.y = 10 * S;
+        const bottle = new THREE.Mesh(
+          new THREE.CylinderGeometry(6 * S, 5 * S, 16 * S, 12),
+          new THREE.MeshStandardMaterial({ color: 0x60c8f0, transparent: true, opacity: 0.75 })
+        );
+        bottle.position.y = 28 * S;
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(5.5 * S, 5.5 * S, 2 * S, 12), new THREE.MeshStandardMaterial({ color: 0x1e3a5f }));
+        cap.position.y = 36.5 * S;
+        group.add(base, bottle, cap);
+        obj = group;
+        y = 0;
       } else {
         obj = new THREE.Mesh(new THREE.BoxGeometry(6 * S, 9 * S, 2 * S), new THREE.MeshStandardMaterial({ map: switchTex }));
         y = 45 * S;
@@ -1191,20 +1320,55 @@ export class GameScreen implements Screen {
   // so a dark room reads as genuinely dark from any camera angle/zoom,
   // matching the spec's "don't over-engineer, pick the most stable method."
   private buildDarkRoomOverlays() {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: GAME_CONFIG.DARKNESS_ALPHA, depthWrite: false });
     for (const room of ROOMS) {
+      // Each room gets its OWN material instance (not shared) so one room's
+      // fade-in/out animates independently of every other dark room.
+      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(room.w, WALL_HEIGHT, room.h), mat);
       mesh.position.set(room.x + room.w / 2, WALL_HEIGHT / 2, room.y + room.h / 2);
       mesh.visible = false;
       this.scene.add(mesh);
-      this.darkRoomOverlays.set(room.id, mesh);
+      this.darkRoomOverlays.set(room.id, { mesh, opacity: 0 });
     }
   }
 
-  private updateDarkRoomOverlays() {
+  private updateDarkRoomOverlays(dt: number) {
     if (!this.room) return;
-    this.darkRoomOverlays.forEach((mesh, roomId) => {
-      mesh.visible = this.room!.state.darkRooms.has(roomId);
+    const ease = Math.min(1, LIGHT_EASE_RATE * dt);
+    this.darkRoomOverlays.forEach((entry, roomId) => {
+      const target = this.room!.state.darkRooms.has(roomId) ? GAME_CONFIG.DARKNESS_ALPHA : 0;
+      entry.opacity = THREE.MathUtils.lerp(entry.opacity, target, ease);
+      (entry.mesh.material as THREE.MeshBasicMaterial).opacity = entry.opacity;
+      entry.mesh.visible = entry.opacity > 0.001;
+    });
+  }
+
+  // Floating glowing orb per spawn point — hidden while that spot is on
+  // cooldown (server's `collectedSmokeItems`), same bob-and-spin idle
+  // treatment as a typical "pick this up" game item.
+  private buildSmokeItems() {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, emissive: 0x6d28d9, emissiveIntensity: 0.7 });
+    for (const spawn of SMOKE_ITEM_SPAWNS) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10), mat);
+      mesh.position.set(spawn.x, 14, spawn.y);
+      this.scene.add(mesh);
+      this.smokeItemMeshes.set(spawn.id, mesh);
+
+      new TWEEN.Tween(mesh.position)
+        .to({ y: 20 }, 900 + Math.random() * 300)
+        .yoyo(true)
+        .repeat(Infinity)
+        .delay(Math.random() * 800)
+        .easing(TWEEN.Easing.Sinusoidal.InOut)
+        .start();
+    }
+  }
+
+  private updateSmokeItems() {
+    if (!this.room) return;
+    this.smokeItemMeshes.forEach((mesh, id) => {
+      mesh.visible = !this.room!.state.collectedSmokeItems.has(id);
+      mesh.rotation.y += 0.03;
     });
   }
 }

@@ -17,6 +17,7 @@ const HELP_HTML = `
   <div style="margin-bottom:4px;">เดินไปจุดซ่อน กด SPACE เพื่อซ่อน หรือย้ายที่ซ่อนได้ตลอดเวลา</div>
   <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
   <div style="margin-bottom:4px;">F — ล่อคนหาด้วยเสียง</div>
+  <div style="margin-bottom:4px;">เดินผ่านระเบิดควันที่กระจายอยู่ตามพื้นเพื่อเก็บ (ถืออันเดียว) แล้วกด G ตอนคนหาเข้าใกล้ เพื่อให้คนหามึนงงและเดินช้าลงชั่วคราว</div>
   <div style="margin-bottom:12px;">เข้าใกล้ของในห้องแล้วกด SPACE: กระดาน (หลอกคนหา) / เครื่องชงกาแฟ (วิ่งเร็วขึ้น) / จอมอนิเตอร์ (ดูตำแหน่งห้องของคนหา)</div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>สวิตช์ไฟ (ทุกคน)</b></div>
   <div style="margin-bottom:4px;">เข้าใกล้สวิตช์ข้างประตูแล้วกด SPACE เพื่อเปิด/ปิดไฟห้องนั้น</div>
@@ -40,6 +41,7 @@ export class GameHud {
   private relocateEl: HTMLDivElement;
   private roleBannerEl: HTMLDivElement;
   private blackoutEl: HTMLDivElement;
+  private dazedEl: HTMLDivElement;
   private feedbackEl: HTMLDivElement;
   private helpPanelEl: HTMLDivElement;
   private abilitiesEl: HTMLDivElement;
@@ -64,6 +66,7 @@ export class GameHud {
       <div id="hudBlackout" style="position:absolute;inset:0;background:#000000f7;display:none;align-items:center;justify-content:center;">
         <div style="color:#fff;font-size:20px;text-align:center;white-space:pre-line;"></div>
       </div>
+      <div id="hudDazed" style="position:absolute;inset:0;background:radial-gradient(circle, transparent 15%, #d6dbe255 55%, #9aa3ad9c 100%);backdrop-filter:blur(3px);opacity:0;transition:opacity 0.6s ease;"></div>
       <button id="hudHelpBtn" style="position:absolute;top:20px;right:24px;pointer-events:auto;font-size:18px;font-weight:800;background:#0a0f1cbb;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;">?</button>
       <div id="hudHelpPanel" style="position:absolute;top:70px;right:24px;width:280px;background:#0a0f1cf0;border:2px solid #22d3ee80;border-radius:12px;padding:16px;color:#f1f5f9;font-size:13px;line-height:1.6;display:none;"></div>
       <div id="hudHint" style="position:absolute;bottom:118px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#fff;background:#000000aa;padding:6px 14px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
@@ -79,6 +82,7 @@ export class GameHud {
     this.feedbackEl = this.root.querySelector("#hudFeedback") as HTMLDivElement;
     this.roleBannerEl = this.root.querySelector("#hudRoleBanner") as HTMLDivElement;
     this.blackoutEl = this.root.querySelector("#hudBlackout") as HTMLDivElement;
+    this.dazedEl = this.root.querySelector("#hudDazed") as HTMLDivElement;
     this.helpPanelEl = this.root.querySelector("#hudHelpPanel") as HTMLDivElement;
     this.helpPanelEl.innerHTML = HELP_HTML;
     this.abilitiesEl = this.root.querySelector("#hudAbilities") as HTMLDivElement;
@@ -165,6 +169,10 @@ export class GameHud {
 
   setAbilitiesVisible(visible: boolean) {
     this.abilitiesEl.style.display = visible ? "flex" : "none";
+  }
+
+  setDazed(active: boolean) {
+    this.dazedEl.style.opacity = active ? "1" : "0";
   }
 
   setBlackout(active: boolean, timeRemaining: number) {
