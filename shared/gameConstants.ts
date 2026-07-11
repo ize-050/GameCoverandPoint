@@ -1,6 +1,7 @@
 export const GAME_CONFIG = {
   MAX_PLAYERS: 10,
-  MIN_PLAYERS: 4,
+  // Solo test mode. Raise back to 4 before a production team-building session.
+  MIN_PLAYERS: 1,
   HIDE_PHASE_SEC: 30,
   SEEK_PHASE_SEC: 180,
   ROLE_REVEAL_SEC: 5,

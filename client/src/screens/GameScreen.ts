@@ -152,7 +152,7 @@ const ISO_DISTANCE = 900;
 // characters and furniture fill much more of the screen than a wide
 // strategy-game view. Scroll still reaches out to MAX_CAMERA_ZOOM for
 // players who want the wider view back.
-const VIEW_SIZE = 320; // world units of half-height visible in the viewport, default zoom
+const VIEW_SIZE = 270; // tighter framing so furniture/room detail remains readable
 const CAMERA_FOLLOW_DAMP = 5;
 // How fast ambient/sun intensity and the darkness overlay fade toward their
 // target when a room's lights get toggled — slower than zoom, reads more
@@ -931,14 +931,18 @@ export class GameScreen implements Screen {
 
   private buildWorld() {
     this.scene.background = new THREE.Color(0x1c2430);
+    this.scene.fog = new THREE.Fog(0x1c2430, 900, 2300);
 
     this.ambientLight = new THREE.AmbientLight(0xffffff, BASE_AMBIENT_INTENSITY);
     this.scene.add(this.ambientLight);
     this.sunLight = new THREE.DirectionalLight(0xf5f7fa, BASE_SUN_INTENSITY);
     this.sunLight.position.set(300, 500, 200);
     this.scene.add(this.sunLight);
+    const skyFill = new THREE.HemisphereLight(0xbfe8ff, 0x2b1d35, 0.32);
+    this.scene.add(skyFill);
 
     this.buildGround();
+    this.buildWayfinding();
     this.buildRoomVisuals();
     this.buildWalls();
     this.buildCoverPoints();
@@ -948,6 +952,48 @@ export class GameScreen implements Screen {
     this.buildCeilingLights();
     this.buildDarkRoomOverlays();
     this.buildSmokeItems();
+  }
+
+  private buildWayfinding() {
+    const lineMaterial = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+    const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x075985, emissiveIntensity: 0.18 });
+    const strips = [
+      { x: MAP_WIDTH / 2, z: MAP_HEIGHT / 2, w: 34, d: MAP_HEIGHT * 0.88 },
+      { x: MAP_WIDTH / 2, z: MAP_HEIGHT / 2, w: MAP_WIDTH * 0.88, d: 34 },
+    ];
+    for (const strip of strips) {
+      const runner = new THREE.Mesh(new THREE.PlaneGeometry(strip.w, strip.d), lineMaterial);
+      runner.rotation.x = -Math.PI / 2;
+      runner.position.set(strip.x, 0.18, strip.z);
+      this.scene.add(runner);
+    }
+    const directions = [
+      { id: "server", fx: 0.5, fz: 0.96 }, { id: "lounge", fx: 0.5, fz: 0.96 },
+      { id: "toilet", fx: 0.5, fz: 0.96 }, { id: "work_a", fx: 0.96, fz: 0.5 },
+      { id: "meeting", fx: 0.04, fz: 0.5 }, { id: "work_b", fx: 0.96, fz: 0.18 },
+      { id: "reception", fx: 0.5, fz: 0.04 },
+    ];
+    for (const direction of directions) {
+      const room = ROOMS.find((candidate) => candidate.id === direction.id);
+      if (!room) continue;
+      const marker = new THREE.Mesh(new THREE.PlaneGeometry(32, 8), accentMaterial.clone());
+      (marker.material as THREE.MeshStandardMaterial).color.set(ROOM_VISUALS[direction.id]?.accent ?? 0x38bdf8);
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(room.x + room.w * direction.fx, 0.62, room.y + room.h * direction.fz);
+      this.scene.add(marker);
+    }
+
+    // Repeating ceiling-light pools projected on the main corridors add depth
+    // without adding collision geometry.
+    const poolMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4cf, transparent: true, opacity: 0.055, depthWrite: false });
+    for (let x = 180; x < MAP_WIDTH; x += 280) {
+      for (const z of [MAP_HEIGHT * 0.5 - 45, MAP_HEIGHT * 0.5 + 45]) {
+        const pool = new THREE.Mesh(new THREE.CircleGeometry(48, 24), poolMaterial);
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(x, 0.5, z);
+        this.scene.add(pool);
+      }
+    }
   }
 
   private buildOfficeSetDressing() {

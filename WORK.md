@@ -19,7 +19,7 @@
 
 - เพิ่ม acceleration จากหยุดนิ่งไปถึงความเร็วเป้าหมายประมาณ 0.12 วินาที
 - เพิ่ม deceleration ตอนปล่อยปุ่มประมาณ 0.08 วินาที
-- Normalize input แนวทแยง ป้องกันการวิ่งเร็วขึ้นเมื่อกดสองทิศพร้อมกัน
+- Normalize input แนวทแยง ป้องกันการวิ่งเร็วขึ้นเมื่อกดสองทิศพร้อมกันx
 - ตัวละครคงทิศล่าสุดเมื่อหยุดเดิน
 - เปลี่ยนการหมุนเป็น shortest-angle damping factor 12
 - เพิ่ม `rotY` ใน move message และ Player schema
@@ -61,7 +61,7 @@
 
 - ลดความเร็ว Seeker จาก 220 เป็น 216 เทียบเท่าเร็วกว่า Hider 8%
 - Inspect miss cooldown ตั้งเป็น 3 วินาที
-- ตั้งผู้เล่นขั้นต่ำสำหรับเริ่มเกมเป็น 4 คน
+- ตั้ง `MIN_PLAYERS` เป็น 1 ชั่วคราวสำหรับ solo visual/gameplay test
 - Hider ที่ยังไม่ถูกจับได้รับโบนัส 25 คะแนนทุก 60 วินาที
 - คงระบบ inspect budget และ relocate window เดิมของเกมไว้
 
@@ -149,7 +149,7 @@
 - ตรวจ production server แล้วว่า:
   - Player schema มี `heldItem`
   - ห้องหนึ่งคนยังอยู่ phase `lobby`
-  - ไม่สามารถเริ่มเกมก่อนครบผู้เล่นขั้นต่ำสี่คน
+  - Host สามารถเริ่มรอบคนเดียวได้ใน solo test mode
 
 ## หมายเหตุจาก Dependency Audit
 
@@ -188,6 +188,10 @@
 - Minimap มุมขวาบนคลิกเพื่อขยาย/ย่อได้ และยังรองรับปุ่ม M
 - คลิกฉากหลังของ minimap ขนาดใหญ่เพื่อปิดได้
 - Visual ทั้งหมดเป็น cosmetic ไม่เปลี่ยน collision, spawn หรือ gameplay logic
+- เปิด sRGB output และ ACES filmic tone mapping เพื่อให้สี/แสงมีมิติมากขึ้น
+- เพิ่ม atmospheric fog และ hemisphere fill light ลดภาพแบน
+- ลดมุมมองกล้องจาก 320 เป็น 270 world units เพื่อให้รายละเอียดอ่านง่ายขึ้น
+- เพิ่มเส้นทางเดินหลัก, wayfinding strip สีห้อง และ light pool บนพื้นทางเดิน
 
 ## คำสั่งตรวจสอบก่อน Deploy
 
