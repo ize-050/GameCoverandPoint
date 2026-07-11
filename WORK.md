@@ -202,3 +202,18 @@ npm run build --prefix client
 git diff --check
 git status
 ```
+
+## Office Missions และ Pattern Pass
+
+- เพิ่ม mission pool เจ็ดภารกิจที่ผูกกับ Server, Lounge, Restroom, Work Zone A/B, Meeting และ Reception
+- สุ่มสามภารกิจใหม่ทุกต้นรอบและ sync ผ่าน Colyseus schema
+- Hider ทำภารกิจได้เฉพาะ phase SEEK, ต้องไม่ซ่อน/ถูกจับ และต้องอยู่ในระยะ prop จริง
+- กด E ที่วง mission สีเหลืองเพื่อทำภารกิจ
+- ภารกิจละ 30 คะแนน; ทำครบทั้งชุดให้ผู้รอดคนละ 50 คะแนนและลดเวลารอบ 20 วินาที
+- HUD แสดง `OFFICE MISSIONS 0/3` และขีดฆ่ารายการที่ทำแล้ว
+- Minimap แสดง marker สีเหลืองของภารกิจที่ยังไม่สำเร็จ
+- จุดภารกิจในโลกมี ring และ diamond animation
+- เปลี่ยนชื่อห้องใน map, minimap และ room hint เป็นภาษาอังกฤษ
+- เพิ่มลวดลายพื้นเฉพาะห้อง: server grid, restroom tiles, work-zone carpet, meeting/lounge rug และ reception diagonal pattern
+- ช่องไอเท็มใช้สี/gradient ต่างกันสำหรับ Smoke, Decoy, Stun และ Sprint
+- Server ปฏิเสธการทำ mission จากระยะไกล (ตรวจ integration แล้ว)

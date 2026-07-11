@@ -116,7 +116,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Server room — top-left
   {
     id: "server",
-    name: "ห้อง Server",
+    name: "Server Lab",
     x: 320,
     y: 520,
     w: 1360,
@@ -126,7 +126,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Lounge — top-middle
   {
     id: "lounge",
-    name: "ห้องนั่งเล่น",
+    name: "Lounge",
     x: 2750,
     y: 520,
     w: 900,
@@ -136,7 +136,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Toilet — top-right
   {
     id: "toilet",
-    name: "ห้องน้ำ",
+    name: "Restroom",
     x: 4720,
     y: 520,
     w: 1360,
@@ -146,7 +146,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Work Zone A — middle-left
   {
     id: "work_a",
-    name: "โซนทำงาน A",
+    name: "Work Zone A",
     x: 320,
     y: 1950,
     w: 700,
@@ -156,7 +156,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Meeting room — middle-right
   {
     id: "meeting",
-    name: "ห้องประชุม",
+    name: "Meeting Room",
     x: 5050,
     y: 1950,
     w: 700,
@@ -166,7 +166,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // Work Zone B — bottom-left
   {
     id: "work_b",
-    name: "โซนทำงาน B",
+    name: "Work Zone B",
     x: 320,
     y: 3040,
     w: 1360,
@@ -179,7 +179,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // them in before "seek" starts.
   {
     id: "reception",
-    name: "ห้องต้อนรับ",
+    name: "Reception",
     x: 2850,
     y: 3680,
     w: 700,
@@ -190,7 +190,7 @@ const ROOMS_RAW: RoomSpec[] = [
   // but harmless flavor (spec explicitly invites "design our own office").
   {
     id: "phonebooth",
-    name: "ห้องโทรศัพท์",
+    name: "Phone Booth",
     x: 2000,
     y: 700,
     w: 200,

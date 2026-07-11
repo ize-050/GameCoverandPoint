@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "solo-visual-v2",
+    release: "office-missions-v1",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

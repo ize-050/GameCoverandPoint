@@ -1,4 +1,5 @@
 import { icon, EMOTE_ICON_NAMES } from "./icons";
+import type { MissionDef } from "../../../shared/missions";
 
 const URGENT_TIME_SEC = 30;
 
@@ -8,6 +9,7 @@ const HELP_HTML = `
   <div style="margin-bottom:6px;">กล้อง isometric ล็อกมุมและซูมเท่ากันสำหรับผู้เล่นทุกคน</div>
   <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
   <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
+  <div style="margin-bottom:6px;">E — ทำ Office Mission เมื่ออยู่ที่จุดสีเหลือง</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
     1 2 3 4 — ส่งอีโมจิ
     ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 15 })).join("")}
@@ -45,6 +47,7 @@ export class GameHud {
   private abilitiesEl: HTMLDivElement;
   private hintEl: HTMLDivElement;
   private itemEl: HTMLDivElement;
+  private missionsEl: HTMLDivElement;
   private roleBannerTimeout?: ReturnType<typeof setTimeout>;
   private feedbackTimeout?: ReturnType<typeof setTimeout>;
   private helpVisible = false;
@@ -71,6 +74,7 @@ export class GameHud {
       <div id="hudHint" style="position:absolute;bottom:118px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#fff;background:#000000aa;padding:6px 14px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
       <div id="hudAbilities" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);display:none;gap:14px;pointer-events:auto;"></div>
       <div id="hudItem" style="position:absolute;bottom:24px;left:24px;min-width:150px;color:#fff;background:#0f172acc;border:1px solid #ffffff33;border-radius:12px;padding:10px 14px;display:none;pointer-events:auto;font-weight:700;"></div>
+      <div id="hudMissions" style="position:absolute;top:92px;left:10px;width:255px;color:#fff;background:#07111dcc;border:1px solid #38bdf855;border-radius:12px;padding:11px 13px;display:none;font-size:12px;line-height:1.45;"></div>
       <div id="hudEmotes" style="position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:10px;pointer-events:auto;"></div>
     `;
     document.body.appendChild(this.root);
@@ -88,6 +92,7 @@ export class GameHud {
     this.abilitiesEl = this.root.querySelector("#hudAbilities") as HTMLDivElement;
     this.hintEl = this.root.querySelector("#hudHint") as HTMLDivElement;
     this.itemEl = this.root.querySelector("#hudItem") as HTMLDivElement;
+    this.missionsEl = this.root.querySelector("#hudMissions") as HTMLDivElement;
     this.itemEl.addEventListener("click", onUseItem);
 
     (this.root.querySelector("#hudHelpBtn") as HTMLButtonElement).addEventListener("click", () => {
@@ -177,6 +182,19 @@ export class GameHud {
     const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
     this.itemEl.textContent = item ? `${labels[item] ?? item} · กด Q ใช้` : "ช่องไอเท็มว่าง";
     this.itemEl.style.opacity = item ? "1" : "0.55";
+    const styles: Record<string, string> = {
+      smoke: "linear-gradient(135deg,#334155dd,#94a3b8dd)", decoy: "linear-gradient(135deg,#7c3aeddd,#ec4899dd)",
+      stun: "repeating-linear-gradient(135deg,#713f12dd 0 8px,#eab308dd 8px 16px)", sprint: "linear-gradient(135deg,#075985dd,#22d3eedd)",
+    };
+    this.itemEl.style.background = styles[item] ?? "#0f172acc";
+  }
+
+  setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean) {
+    this.missionsEl.style.display = visible ? "block" : "none";
+    if (!visible) return;
+    const done = missions.filter((mission) => completed.has(mission.id)).length;
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:7px;">OFFICE MISSIONS ${done}/${missions.length}</div>` +
+      missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("");
   }
 
   setBlackout(active: boolean, timeRemaining: number) {

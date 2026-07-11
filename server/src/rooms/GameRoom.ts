@@ -29,6 +29,7 @@ import {
   type UsePropMessage,
   type ItemKind,
 } from "../../../shared/messages.js";
+import { MISSION_POOL, MISSIONS_PER_ROUND, MISSION_SCORE, ALL_MISSIONS_BONUS } from "../../../shared/missions.js";
 
 // Looks identical to a real cover point client-side, but can never actually
 // hide anyone — computed once from the shared map data rather than kept in
@@ -116,6 +117,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("useProp", (client, message: UsePropMessage) => this.handleUseProp(client, message));
     this.onMessage("useSmoke", (client) => this.handleUseSmoke(client));
     this.onMessage("useItem", (client) => this.handleUseItem(client));
+    this.onMessage("completeMission", (client, message: { missionId?: string }) => this.handleCompleteMission(client, message));
 
     this.clock.setInterval(() => this.tick(), 1000);
 
@@ -338,6 +340,8 @@ export class GameRoom extends Room<GameState> {
     this.state.relocateActive = false;
     this.state.darkRooms.clear();
     this.state.collectedSmokeItems.clear();
+    this.state.missions.clear();
+    shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND).forEach((mission) => this.state.missions.set(mission.id, false));
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
 
@@ -486,6 +490,28 @@ export class GameRoom extends Room<GameState> {
         if (i >= 0) this.stunTraps.splice(i, 1);
         this.broadcastToHiders("trapRemoved", { id: trap.id });
       }, GAME_CONFIG.STUN_TRAP_LIFETIME_MS);
+    }
+  }
+
+  private handleCompleteMission(client: Client, message: { missionId?: string }) {
+    if (this.state.phase !== "seek") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "hider" || player.isCaught || player.isHidden) return;
+    if (!message?.missionId || !this.state.missions.has(message.missionId) || this.state.missions.get(message.missionId)) return;
+    const mission = MISSION_POOL.find((candidate) => candidate.id === message.missionId);
+    const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
+    if (!mission || !prop || Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
+
+    this.state.missions.set(mission.id, true);
+    player.score += MISSION_SCORE;
+    this.broadcast("missionComplete", { missionId: mission.id, title: mission.title, nickname: player.nickname, points: MISSION_SCORE });
+
+    if ([...this.state.missions.values()].every(Boolean)) {
+      this.state.players.forEach((candidate) => {
+        if (candidate.role === "hider" && !candidate.isCaught) candidate.score += ALL_MISSIONS_BONUS;
+      });
+      this.state.timeRemaining = Math.max(30, this.state.timeRemaining - 20);
+      this.broadcast("allMissionsComplete", { points: ALL_MISSIONS_BONUS, timeReduced: 20 });
     }
   }
 

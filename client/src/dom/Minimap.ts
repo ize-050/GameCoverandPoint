@@ -1,6 +1,8 @@
 import { ROOMS, ROOM_VISUALS } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import type { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
+import { MISSION_POOL } from "../../../shared/missions";
+import { ROOM_PROPS } from "../../../shared/mapLayout";
 
 // 4:3 matches MAP_WIDTH:MAP_HEIGHT (3200:2400) exactly, so the schematic
 // isn't stretched at either size.
@@ -69,7 +71,7 @@ export class Minimap {
     this.backdrop.remove();
   }
 
-  render(localPos: { x: number; z: number }, remotes: Map<string, RemotePlayer3D>) {
+  render(localPos: { x: number; z: number }, remotes: Map<string, RemotePlayer3D>, missions?: Map<string, boolean>) {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
     const scaleX = width / MAP_WIDTH;
@@ -99,6 +101,25 @@ export class Minimap {
         ctx.fillText(room.name, rx + rw / 2, ry + rh / 2);
       }
     });
+
+    if (missions) {
+      missions.forEach((completed, missionId) => {
+        if (completed) return;
+        const mission = MISSION_POOL.find((candidate) => candidate.id === missionId);
+        const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
+        if (!prop) return;
+        const x = prop.x * scaleX;
+        const y = prop.y * scaleY;
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.moveTo(x, y - (this.expanded ? 7 : 4));
+        ctx.lineTo(x + (this.expanded ? 7 : 4), y);
+        ctx.lineTo(x, y + (this.expanded ? 7 : 4));
+        ctx.lineTo(x - (this.expanded ? 7 : 4), y);
+        ctx.closePath();
+        ctx.fill();
+      });
+    }
 
     ctx.fillStyle = "#38bdf8";
     remotes.forEach((remote) => {

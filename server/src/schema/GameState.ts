@@ -19,6 +19,7 @@ export class GameState extends Schema {
   // Smoke-bomb pickups: presence of a spawn id key (value `true`) means
   // that spot was already collected and is on cooldown until it respawns.
   @type({ map: "boolean" }) collectedSmokeItems = new MapSchema<boolean>();
+  @type({ map: "boolean" }) missions = new MapSchema<boolean>();
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: CoverPoint }) coverPoints = new MapSchema<CoverPoint>();
 }

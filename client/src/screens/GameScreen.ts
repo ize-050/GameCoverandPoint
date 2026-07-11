@@ -33,6 +33,7 @@ import type {
   ItemPickedMessage,
   TrapMessage,
 } from "../../../shared/messages";
+import { MISSION_POOL } from "../../../shared/missions";
 import {
   generateGroundTexture,
   generateCabinetTexture,
@@ -192,6 +193,7 @@ export class GameScreen implements Screen {
   private prevDazed = false;
   private smokeItemMeshes = new Map<string, THREE.Object3D>();
   private trapMeshes = new Map<string, THREE.Object3D>();
+  private missionMarkers = new Map<string, THREE.Object3D>();
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
   private stateChangeHandler = () => this.checkPhase();
@@ -316,6 +318,10 @@ export class GameScreen implements Screen {
         });
         if (this.myPlayer.role === "hider") {
           if (keyboard.justDown("KeyQ") && this.myPlayer.heldItem) this.room!.send("useItem");
+          if (keyboard.justDown("KeyE")) {
+            const mission = this.findNearbyMission();
+            if (mission) this.room!.send("completeMission", { missionId: mission.id });
+          }
         }
       }
     }
@@ -325,11 +331,12 @@ export class GameScreen implements Screen {
     if (keyboard.justDown("KeyM")) this.minimap?.toggle();
     if (this.localPlayer) {
       const pos = this.localPlayer.character.position;
-      this.minimap?.render({ x: pos.x, z: pos.z }, this.remotePlayers);
+      this.minimap?.render({ x: pos.x, z: pos.z }, this.remotePlayers, new Map(this.room?.state.missions.entries() ?? []));
     }
 
     this.updateDarkRoomOverlays(dt);
     this.updateSmokeItems();
+    this.updateMissionMarkers();
     if (this.myPlayer && (this.myPlayer.isDazed || this.myPlayer.isStunned) !== this.prevDazed) {
       this.prevDazed = this.myPlayer.isDazed || this.myPlayer.isStunned;
       this.hud?.setDazed(this.prevDazed);
@@ -381,6 +388,9 @@ export class GameScreen implements Screen {
     const showAbilities = this.myPlayer?.role === "hider" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
     this.hud.setAbilitiesVisible(!!showAbilities);
     this.hud.setHeldItem(this.myPlayer?.heldItem ?? "", !!showAbilities);
+    const activeMissions = MISSION_POOL.filter((mission) => this.room!.state.missions.has(mission.id));
+    const completedMissions = new Set(activeMissions.filter((mission) => this.room!.state.missions.get(mission.id)).map((mission) => mission.id));
+    this.hud.setMissions(activeMissions, completedMissions, phase === "seek" && activeMissions.length > 0);
 
     this.hud.setHint(this.computeHint(phase));
 
@@ -511,6 +521,14 @@ export class GameScreen implements Screen {
       this.hud?.showFeedback(`รอดครบ 60 วิ +${msg.points}`);
     });
     this.unsubs.push(offSurvivalBonus);
+
+    const offMissionComplete = room.onMessage("missionComplete", (msg: { title: string; nickname: string; points: number }) => {
+      this.hud?.showFeedback(`✅ ${escapeHtml(msg.nickname)} completed ${escapeHtml(msg.title)} +${msg.points}`);
+    });
+    const offAllMissions = room.onMessage("allMissionsComplete", (msg: { points: number; timeReduced: number }) => {
+      this.hud?.showFeedback(`🏆 ALL MISSIONS COMPLETE! +${msg.points} · ${msg.timeReduced}s reduced`, 2600);
+    });
+    this.unsubs.push(offMissionComplete, offAllMissions);
 
     const offTrapPlaced = room.onMessage("trapPlaced", (msg: TrapMessage) => {
       const mesh = new THREE.Mesh(
@@ -851,6 +869,8 @@ export class GameScreen implements Screen {
     if (toiletUse) return propHintText(toiletUse.kind);
 
     if (me.role === "hider") {
+      const mission = this.findNearbyMission();
+      if (mission) return `[E] ${mission.title}`;
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
       if (me.heldItem) return "[Q] ใช้ไอเท็มที่ถืออยู่";
@@ -867,6 +887,16 @@ export class GameScreen implements Screen {
     }
 
     return null;
+  }
+
+  private findNearbyMission() {
+    if (!this.room || !this.localPlayer || this.myPlayer?.role !== "hider" || this.room.state.phase !== "seek") return undefined;
+    const pos = this.localPlayer.character.position;
+    return MISSION_POOL.find((mission) => {
+      if (!this.room!.state.missions.has(mission.id) || this.room!.state.missions.get(mission.id)) return false;
+      const prop = ROOM_PROPS.find((candidate) => candidate.id === mission.propId);
+      return !!prop && Math.hypot(pos.x - prop.x, pos.z - prop.y) <= GAME_CONFIG.ROOM_PROP_RANGE_PX;
+    });
   }
 
   private handleSpacePress() {
@@ -952,6 +982,39 @@ export class GameScreen implements Screen {
     this.buildCeilingLights();
     this.buildDarkRoomOverlays();
     this.buildSmokeItems();
+    this.buildMissionMarkers();
+  }
+
+  private buildMissionMarkers() {
+    for (const mission of MISSION_POOL) {
+      const prop = ROOM_PROPS.find((candidate) => candidate.id === mission.propId);
+      if (!prop) continue;
+      const group = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(18, 2.2, 8, 28),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xf59e0b, emissiveIntensity: 0.8 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      const diamond = new THREE.Mesh(
+        new THREE.OctahedronGeometry(7),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 1 })
+      );
+      diamond.position.y = 34;
+      group.add(ring, diamond);
+      group.position.set(prop.x, 2, prop.y);
+      group.visible = false;
+      this.scene.add(group);
+      this.missionMarkers.set(mission.id, group);
+      new TWEEN.Tween(diamond.position).to({ y: 43 }, 850).yoyo(true).repeat(Infinity).easing(TWEEN.Easing.Sinusoidal.InOut).start();
+    }
+  }
+
+  private updateMissionMarkers() {
+    if (!this.room) return;
+    this.missionMarkers.forEach((marker, missionId) => {
+      marker.visible = this.room!.state.phase === "seek" && this.room!.state.missions.has(missionId) && !this.room!.state.missions.get(missionId);
+      marker.rotation.y += 0.012;
+    });
   }
 
   private buildWayfinding() {
@@ -1116,6 +1179,35 @@ export class GameScreen implements Screen {
       floor.rotation.x = -Math.PI / 2;
       floor.position.set(room.x + room.w / 2, 0.35, room.y + room.h / 2);
       this.scene.add(floor);
+
+      // Room-specific floor language: circuits, carpet bands, tiles or a
+      // central rug. These are deliberately subtle so players/items stay legible.
+      const patternMat = new THREE.MeshBasicMaterial({ color: style.accent, transparent: true, opacity: 0.16, depthWrite: false });
+      const addPattern = (x: number, z: number, w: number, d: number, rotation = 0) => {
+        const piece = new THREE.Mesh(new THREE.PlaneGeometry(w, d), patternMat);
+        piece.rotation.x = -Math.PI / 2;
+        piece.rotation.z = rotation;
+        piece.position.set(x, 0.72, z);
+        this.scene.add(piece);
+      };
+      if (room.id === "server") {
+        for (let i = 1; i < 6; i++) addPattern(room.x + room.w * i / 6, room.y + room.h / 2, 2.5, room.h * 0.82);
+        for (let i = 1; i < 5; i++) addPattern(room.x + room.w / 2, room.y + room.h * i / 5, room.w * 0.82, 2.5);
+      } else if (room.id === "toilet") {
+        for (let i = 1; i < 7; i++) addPattern(room.x + room.w * i / 7, room.y + room.h / 2, 1.6, room.h * 0.88);
+        for (let i = 1; i < 6; i++) addPattern(room.x + room.w / 2, room.y + room.h * i / 6, room.w * 0.88, 1.6);
+      } else if (room.id === "work_a" || room.id === "work_b") {
+        for (let i = -3; i <= 3; i++) addPattern(room.x + room.w / 2 + i * 28, room.y + room.h / 2, 8, room.h * 0.86, Math.PI / 14);
+      } else if (room.id === "meeting") {
+        addPattern(room.x + room.w / 2, room.y + room.h / 2, room.w * 0.66, room.h * 0.52);
+        addPattern(room.x + room.w / 2, room.y + room.h / 2, room.w * 0.58, room.h * 0.44);
+      } else if (room.id === "lounge") {
+        addPattern(room.x + room.w / 2, room.y + room.h * 0.58, room.w * 0.68, room.h * 0.42, Math.PI / 36);
+      } else if (room.id === "reception") {
+        for (let i = -3; i <= 3; i++) addPattern(room.x + room.w / 2 + i * 34, room.y + room.h / 2, 12, room.h * 0.75, Math.PI / 4);
+      } else {
+        addPattern(room.x + room.w / 2, room.y + room.h / 2, room.w * 0.52, room.h * 0.52, Math.PI / 4);
+      }
 
       const borderMaterial = new THREE.MeshStandardMaterial({ color: style.accent, emissive: style.accent, emissiveIntensity: 0.18 });
       const thickness = 7;
