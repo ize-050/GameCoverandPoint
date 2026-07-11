@@ -204,6 +204,11 @@ export class GameScreen implements Screen {
   private prevHidden = new Map<string, boolean>();
   private prevHasSmokeBomb = false;
   private prevDazed = false;
+  // Trace terminal grants the seeker a temporary minimap view of every
+  // revealed hider (they normally have no minimap at all) — client-side
+  // timer only, matching the world-space shadow reveal's same approach.
+  private traceRevealUntil = 0;
+  private traceRevealPoints: { x: number; y: number }[] = [];
   private smokeItemMeshes = new Map<string, THREE.Object3D>();
   private trapMeshes = new Map<string, THREE.Object3D>();
   private missionMarkers = new Map<string, THREE.Object3D>();
@@ -288,6 +293,8 @@ export class GameScreen implements Screen {
     this.prevHidden.clear();
     this.prevHasSmokeBomb = false;
     this.prevDazed = false;
+    this.traceRevealUntil = 0;
+    this.traceRevealPoints = [];
     this.hud?.destroy();
     this.hud = undefined;
     this.minimap?.destroy();
@@ -359,7 +366,11 @@ export class GameScreen implements Screen {
     this.updateDecoys(dt);
     this.updateHeldItemVisual();
 
-    const canUseMap = this.myPlayer?.role === "hider" || this.myPlayer?.isCaught;
+    // Seekers normally have no minimap at all — the trace terminal's payoff
+    // is a temporary exception, timed purely client-side (same one-shot
+    // snapshot approach as the world-space shadow reveal).
+    const traceRevealActive = performance.now() < this.traceRevealUntil;
+    const canUseMap = this.myPlayer?.role === "hider" || this.myPlayer?.isCaught || traceRevealActive;
     this.minimap?.setVisible(!!canUseMap);
     if (canUseMap && keyboard.justDown("KeyM")) this.minimap?.toggle();
     if (canUseMap && this.localPlayer) {
@@ -371,7 +382,12 @@ export class GameScreen implements Screen {
       const minimapRemotes = viewerIsGhost
         ? this.remotePlayers
         : new Map([...this.remotePlayers].filter(([sessionId]) => this.room?.state.players.get(sessionId)?.role !== "seeker"));
-      this.minimap?.render({ x: pos.x, z: pos.z }, minimapRemotes, new Map(this.room?.state.missions.entries() ?? []));
+      this.minimap?.render(
+        { x: pos.x, z: pos.z },
+        minimapRemotes,
+        new Map(this.room?.state.missions.entries() ?? []),
+        traceRevealActive ? this.traceRevealPoints : undefined
+      );
     }
 
     this.updateDarkRoomOverlays(dt);
@@ -574,6 +590,8 @@ export class GameScreen implements Screen {
 
     const offTraceReveal = room.onMessage("traceReveal", (msg: RevealPingMessage) => {
       this.playRevealBeacons(msg.points, msg.durationMs);
+      this.traceRevealPoints = msg.points;
+      this.traceRevealUntil = performance.now() + msg.durationMs;
       this.hud?.showFeedback(`${icon("target", { size: 18, color: "#facc15" })} เทรซสัญญาณสำเร็จ! เห็นตำแหน่งคนซ่อน ${msg.points.length} คน`);
     });
     this.unsubs.push(offTraceReveal);

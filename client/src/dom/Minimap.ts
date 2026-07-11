@@ -79,7 +79,12 @@ export class Minimap {
     this.backdrop.remove();
   }
 
-  render(localPos: { x: number; z: number }, remotes: Map<string, RemotePlayer3D>, missions?: Map<string, boolean>) {
+  render(
+    localPos: { x: number; z: number },
+    remotes: Map<string, RemotePlayer3D>,
+    missions?: Map<string, boolean>,
+    revealPoints?: { x: number; y: number }[]
+  ) {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
     const scaleX = width / MAP_WIDTH;
@@ -127,6 +132,21 @@ export class Minimap {
         ctx.closePath();
         ctx.fill();
       });
+    }
+
+    // Trace-terminal snapshot — the seeker's client never receives a hidden
+    // hider's live position (schema-filtered), so these come from the
+    // one-shot private "traceReveal" message instead of `remotes`. A dark
+    // ring (not a solid dot) reads as "last known spot," matching the
+    // in-world shadow-silhouette effect the same message also triggers.
+    if (revealPoints) {
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 2;
+      for (const point of revealPoints) {
+        ctx.beginPath();
+        ctx.arc(point.x * scaleX, point.y * scaleY, this.expanded ? 6 : 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     ctx.fillStyle = "#38bdf8";
