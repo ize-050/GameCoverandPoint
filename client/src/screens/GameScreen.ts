@@ -992,8 +992,11 @@ export class GameScreen implements Screen {
       const trace = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, TRACE_TERMINAL_KIND);
       if (trace) return propHintText(trace.kind);
       const cp = this.findNearestCoverPoint(GAME_CONFIG.INSPECT_RANGE_PX);
-      if (!cp) return null;
-      return me.inspectsRemaining > 0 ? "[SPACE] ตรวจจุดนี้" : `${icon("blocked", { size: 14 })} หมดโควตาตรวจแล้ว`;
+      if (cp) return me.inspectsRemaining > 0 ? "[SPACE] ตรวจจุดนี้" : `${icon("blocked", { size: 14 })} หมดโควตาตรวจแล้ว`;
+      // Fallback reminder — scan has no fixed location (unlike trace
+      // terminal), so without this a seeker standing in open floor would
+      // never see any hint that F does something at all.
+      return "[F] สแกนหาคนซ่อนในรัศมี (cooldown 15 วิ)";
     }
 
     return null;
