@@ -14,6 +14,7 @@ export class RemotePlayer3D {
   readonly character: Character3D;
   private targetX: number;
   private targetZ: number;
+  private targetRotY = 0;
 
   constructor(scene: THREE.Scene, x: number, y: number, nickname: string, appearance: CharacterAppearance) {
     this.character = new Character3D(appearance, nickname);
@@ -23,9 +24,10 @@ export class RemotePlayer3D {
     this.targetZ = y;
   }
 
-  setTarget(x: number, y: number) {
+  setTarget(x: number, y: number, rotY?: number) {
     this.targetX = x;
     this.targetZ = y;
+    if (Number.isFinite(rotY)) this.targetRotY = rotY!;
   }
 
   setAppearance(appearance: CharacterAppearance) {
@@ -46,7 +48,7 @@ export class RemotePlayer3D {
     const dz = this.targetZ - pos.z;
     // Tiny residual jitter (server rounding, lerp settling) shouldn't spin
     // the character to face it — only turn to face real movement.
-    if (Math.hypot(dx, dz) > 0.5) this.character.setFacing(dx, dz);
+    this.character.setTargetRotation(this.targetRotY);
     this.character.update(deltaSeconds);
     pos.x = THREE.MathUtils.lerp(pos.x, this.targetX, LERP_FACTOR);
     pos.z = THREE.MathUtils.lerp(pos.z, this.targetZ, LERP_FACTOR);

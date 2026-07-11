@@ -23,6 +23,7 @@ export class Player extends Schema {
   @filter(positionFilter) @type("number") x: number = 0;
   @filter(positionFilter) @type("number") y: number = 0;
   @type("string") anim: string = "idle";
+  @type("number") rotY: number = 0;
   @type("boolean") isHidden: boolean = false;
   // Which cover point you're at would reveal your exact position just as much
   // as x/y would (it's a lookup into a publicly-known list of coordinates).
@@ -40,6 +41,9 @@ export class Player extends Schema {
   // Smoke-bomb pickup item. Doesn't reveal position — safe unfiltered.
   @type("boolean") hasSmokeBomb: boolean = false;
   @type("boolean") isDazed: boolean = false;
+  @type("string") heldItem: string = "";
+  @type("boolean") isStunned: boolean = false;
+  @type("number") speedMultiplier: number = 1;
 
   // Character customization (not in original spec, added on request) — one
   // of CHARACTER_VARIANTS in shared/messages.ts (Kenney "Blocky Characters"

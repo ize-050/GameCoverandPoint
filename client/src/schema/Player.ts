@@ -7,6 +7,7 @@ export class Player extends Schema {
   @type("number") x: number = 0;
   @type("number") y: number = 0;
   @type("string") anim: string = "idle";
+  @type("number") rotY: number = 0;
   @type("boolean") isHidden: boolean = false;
   @type("string") coverPointId: string = "";
   @type("boolean") isCaught: boolean = false;
@@ -16,6 +17,9 @@ export class Player extends Schema {
   @type("boolean") speedBoosted: boolean = false;
   @type("boolean") hasSmokeBomb: boolean = false;
   @type("boolean") isDazed: boolean = false;
+  @type("string") heldItem: string = "";
+  @type("boolean") isStunned: boolean = false;
+  @type("number") speedMultiplier: number = 1;
 
   @type("string") characterVariant: string = "a";
 }

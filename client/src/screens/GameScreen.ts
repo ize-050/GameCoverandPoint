@@ -29,6 +29,8 @@ import type {
   MonitorPeekMessage,
   ToiletUseMessage,
   SmokeDeployedMessage,
+  ItemPickedMessage,
+  TrapMessage,
 } from "../../../shared/messages";
 import {
   generateGroundTexture,
@@ -143,22 +145,14 @@ const LIGHTS_OFF_SUN_INTENSITY = 0.015;
 // the followed character (elevation/tilt stays fixed, this is a horizontal
 // 360° orbit, not free-look pitch).
 const ISO_AZIMUTH_DEFAULT = Math.PI / 4;
-const ISO_ELEVATION = (50 * Math.PI) / 180;
+const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
 const ISO_DISTANCE = 900;
-const CAMERA_ROTATE_SPEED = Math.PI * 0.75; // rad/sec while Q/E held
 // Among Us-style tight framing by default — a smaller half-height means
 // characters and furniture fill much more of the screen than a wide
 // strategy-game view. Scroll still reaches out to MAX_CAMERA_ZOOM for
 // players who want the wider view back.
 const VIEW_SIZE = 320; // world units of half-height visible in the viewport, default zoom
-const MIN_CAMERA_ZOOM = 200;
-const MAX_CAMERA_ZOOM = 1400;
-const MOUSE_DRAG_SENSITIVITY = 0.006; // radians of orbit per pixel of horizontal drag
-const WHEEL_ZOOM_SENSITIVITY = 0.6; // world units of zoom per wheel-delta unit
-// Wheel input sets a TARGET zoom (see targetCameraZoom); the actual zoom
-// eases toward it every frame at this rate instead of snapping per tick —
-// a mouse notch (large deltaY) used to jump the view instantly.
-const ZOOM_EASE_RATE = 10;
+const CAMERA_FOLLOW_DAMP = 5;
 // How fast ambient/sun intensity and the darkness overlay fade toward their
 // target when a room's lights get toggled — slower than zoom, reads more
 // like eyes adjusting than a camera setting.
@@ -185,9 +179,7 @@ export class GameScreen implements Screen {
   private followTarget = new THREE.Vector3(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
   private cameraAzimuth = ISO_AZIMUTH_DEFAULT;
   private cameraZoom = VIEW_SIZE;
-  private targetCameraZoom = VIEW_SIZE;
-  private isDragging = false;
-  private lastDragX = 0;
+  private desiredFollowTarget = new THREE.Vector3(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
   private built = false;
 
   private room?: Room<GameState>;
@@ -198,6 +190,7 @@ export class GameScreen implements Screen {
   private prevHasSmokeBomb = false;
   private prevDazed = false;
   private smokeItemMeshes = new Map<string, THREE.Object3D>();
+  private trapMeshes = new Map<string, THREE.Object3D>();
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
   private stateChangeHandler = () => this.checkPhase();
@@ -219,22 +212,8 @@ export class GameScreen implements Screen {
   // replacement. Bound as instance fields (not prototype methods) so the
   // exact same function reference can be passed to both addEventListener
   // (mount) and removeEventListener (unmount).
-  private onPointerDown = (e: PointerEvent) => {
-    this.isDragging = true;
-    this.lastDragX = e.clientX;
-  };
-  private onPointerMove = (e: PointerEvent) => {
-    if (!this.isDragging) return;
-    const dx = e.clientX - this.lastDragX;
-    this.lastDragX = e.clientX;
-    this.cameraAzimuth += dx * MOUSE_DRAG_SENSITIVITY;
-  };
-  private onPointerUp = () => {
-    this.isDragging = false;
-  };
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    this.targetCameraZoom = clamp(this.targetCameraZoom + e.deltaY * WHEEL_ZOOM_SENSITIVITY, MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
   };
 
   constructor(renderer: THREE.WebGLRenderer, navigate: Navigate) {
@@ -254,14 +233,12 @@ export class GameScreen implements Screen {
       this.hud = new GameHud({
         onEmote: (id) => this.room?.send("emote", { id }),
         onDecoy: () => this.room?.send("decoy"),
+        onUseItem: () => this.room?.send("useItem"),
       });
       this.minimap = new Minimap();
       this.wireNetworking();
     }
     const canvas = this.renderer.domElement;
-    canvas.addEventListener("pointerdown", this.onPointerDown);
-    window.addEventListener("pointermove", this.onPointerMove);
-    window.addEventListener("pointerup", this.onPointerUp);
     canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
@@ -273,6 +250,14 @@ export class GameScreen implements Screen {
     this.myPlayer = undefined;
     this.remotePlayers.forEach((p) => p.destroy());
     this.remotePlayers.clear();
+    this.trapMeshes.forEach((mesh) => {
+      mesh.parent?.remove(mesh);
+      if (mesh instanceof THREE.Mesh) {
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+    });
+    this.trapMeshes.clear();
     this.prevHidden.clear();
     this.prevHasSmokeBomb = false;
     this.prevDazed = false;
@@ -288,11 +273,7 @@ export class GameScreen implements Screen {
     musicPlayer.setMood("calm");
 
     const canvas = this.renderer.domElement;
-    canvas.removeEventListener("pointerdown", this.onPointerDown);
-    window.removeEventListener("pointermove", this.onPointerMove);
-    window.removeEventListener("pointerup", this.onPointerUp);
     canvas.removeEventListener("wheel", this.onWheel);
-    this.isDragging = false;
   }
 
   resize(width: number, height: number) {
@@ -307,16 +288,6 @@ export class GameScreen implements Screen {
   update(dt: number) {
     const phase = this.room?.state.phase ?? "lobby";
 
-    // Camera orbit works regardless of role/phase/ghost state — it's a
-    // viewing preference, not a gameplay action.
-    if (keyboard.isDown("KeyQ")) this.cameraAzimuth -= CAMERA_ROTATE_SPEED * dt;
-    if (keyboard.isDown("KeyE")) this.cameraAzimuth += CAMERA_ROTATE_SPEED * dt;
-
-    if (Math.abs(this.cameraZoom - this.targetCameraZoom) > 0.01) {
-      this.cameraZoom = THREE.MathUtils.lerp(this.cameraZoom, this.targetCameraZoom, Math.min(1, ZOOM_EASE_RATE * dt));
-      this.resize(window.innerWidth, window.innerHeight);
-    }
-
     if (this.room && this.localPlayer && this.myPlayer) {
       const isGhost = this.myPlayer.isCaught;
       const blackedOut = phase === "hide" && this.myPlayer.role === "seeker";
@@ -328,8 +299,10 @@ export class GameScreen implements Screen {
         isGhost,
         speedBoosted: this.myPlayer.speedBoosted,
         isDazed: this.myPlayer.isDazed,
+        isStunned: this.myPlayer.isStunned,
+        speedMultiplier: this.myPlayer.speedMultiplier,
       });
-      this.followTarget.copy(this.localPlayer.character.position);
+      this.desiredFollowTarget.copy(this.localPlayer.character.position);
 
       // NOT gated on canMove — canMove excludes isHidden (so WASD doesn't
       // drag a hidden player around), but SPACE's own job while hidden is
@@ -341,8 +314,7 @@ export class GameScreen implements Screen {
           if (keyboard.justDown(code)) this.room!.send("emote", { id: idx + 1 });
         });
         if (this.myPlayer.role === "hider") {
-          if (keyboard.justDown("KeyF")) this.room!.send("decoy");
-          if (keyboard.justDown("KeyG") && this.myPlayer.hasSmokeBomb) this.room!.send("useSmoke");
+          if (keyboard.justDown("KeyQ") && this.myPlayer.heldItem) this.room!.send("useItem");
         }
       }
     }
@@ -357,9 +329,9 @@ export class GameScreen implements Screen {
 
     this.updateDarkRoomOverlays(dt);
     this.updateSmokeItems();
-    if (this.myPlayer && this.myPlayer.isDazed !== this.prevDazed) {
-      this.prevDazed = this.myPlayer.isDazed;
-      this.hud?.setDazed(this.myPlayer.isDazed);
+    if (this.myPlayer && (this.myPlayer.isDazed || this.myPlayer.isStunned) !== this.prevDazed) {
+      this.prevDazed = this.myPlayer.isDazed || this.myPlayer.isStunned;
+      this.hud?.setDazed(this.prevDazed);
     }
     // Dark-room vision depends on both viewer AND target position, so it
     // can't rely solely on the reactive onChange-triggered recompute
@@ -381,6 +353,7 @@ export class GameScreen implements Screen {
       else playLightsOnSfx();
     }
 
+    this.followTarget.lerp(this.desiredFollowTarget, 1 - Math.exp(-CAMERA_FOLLOW_DAMP * dt));
     this.camera.position.copy(this.followTarget).add(isoOffset(this.cameraAzimuth));
     this.camera.lookAt(this.followTarget);
     this.renderer.render(this.scene, this.camera);
@@ -406,6 +379,7 @@ export class GameScreen implements Screen {
 
     const showAbilities = this.myPlayer?.role === "hider" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
     this.hud.setAbilitiesVisible(!!showAbilities);
+    this.hud.setHeldItem(this.myPlayer?.heldItem ?? "", !!showAbilities);
 
     this.hud.setHint(this.computeHint(phase));
 
@@ -455,7 +429,7 @@ export class GameScreen implements Screen {
       this.updateRemoteVisibility(remote, player);
 
       const unsubChange = player.onChange(() => {
-        remote.setTarget(player.x, player.y);
+        remote.setTarget(player.x, player.y, player.rotY);
         remote.setAppearance(appearanceOf(player));
         remote.playAnimation(player.isCaught ? "die" : player.anim);
         this.updateRemoteVisibility(remote, player);
@@ -520,6 +494,39 @@ export class GameScreen implements Screen {
       playSmokeDeploySfx();
     });
     this.unsubs.push(offSmokeDeployed);
+
+    const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
+      const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
+      this.hud?.showFeedback(`ได้ ${labels[msg.item] ?? msg.item}!`);
+    });
+    this.unsubs.push(offItemPicked);
+
+    const offStunned = room.onMessage("stunned", () => {
+      this.hud?.showFeedback("💫 โดนกับดักมึน!");
+    });
+    this.unsubs.push(offStunned);
+
+    const offSurvivalBonus = room.onMessage("survivalBonus", (msg: { points: number }) => {
+      this.hud?.showFeedback(`รอดครบ 60 วิ +${msg.points}`);
+    });
+    this.unsubs.push(offSurvivalBonus);
+
+    const offTrapPlaced = room.onMessage("trapPlaced", (msg: TrapMessage) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(12, 12, 1.5, 16),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.35 })
+      );
+      mesh.position.set(msg.x, 1, msg.y);
+      this.scene.add(mesh);
+      this.trapMeshes.set(msg.id, mesh);
+    });
+    const offTrapRemoved = room.onMessage("trapRemoved", (msg: { id: string }) => {
+      const mesh = this.trapMeshes.get(msg.id);
+      if (!mesh) return;
+      mesh.parent?.remove(mesh);
+      this.trapMeshes.delete(msg.id);
+    });
+    this.unsubs.push(offTrapPlaced, offTrapRemoved);
 
     const offServerAlarm = room.onMessage("serverAlarm", (_msg: ServerAlarmMessage) => {
       this.hud?.showFeedback(`${icon("bell", { size: 18, color: "#f87171" })} มีคนหาเข้าห้อง Server!`);
@@ -845,7 +852,7 @@ export class GameScreen implements Screen {
     if (me.role === "hider") {
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
-      if (me.hasSmokeBomb) return "[G] ใช้ระเบิดควัน";
+      if (me.heldItem) return "[Q] ใช้ไอเท็มที่ถืออยู่";
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
       if (!cp) return null;
       return cp.isOccupied ? "จุดนี้มีคนซ่อนอยู่แล้ว" : "[SPACE] ซ่อนที่นี่";
@@ -1343,13 +1350,13 @@ export class GameScreen implements Screen {
     });
   }
 
-  // Floating glowing orb per spawn point — hidden while that spot is on
+  // Floating glowing gift box per spawn point — hidden while that spot is on
   // cooldown (server's `collectedSmokeItems`), same bob-and-spin idle
   // treatment as a typical "pick this up" game item.
   private buildSmokeItems() {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, emissive: 0x6d28d9, emissiveIntensity: 0.7 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x9f1239, emissiveIntensity: 0.55 });
     for (const spawn of SMOKE_ITEM_SPAWNS) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10), mat);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(16, 16, 16), mat);
       mesh.position.set(spawn.x, 14, spawn.y);
       this.scene.add(mesh);
       this.smokeItemMeshes.set(spawn.id, mesh);

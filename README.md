@@ -1,7 +1,7 @@
 # Hide & Seek Online — hns-party
 
 Real-time multiplayer Hide & Seek party game for internal team building.
-Built with Phaser 3 (client) + Colyseus (server), per the spec at
+Built with Three.js + Vite (client) + Colyseus (server), per the spec at
 `~/Desktop/AI-SPEC-hide-and-seek.md`.
 
 ## Structure
@@ -53,7 +53,17 @@ It connects to the Colyseus server at `ws://localhost:2567`.
       appearance) via `Room.allowReconnection` + a stored `reconnectionToken` —
       verified with a real involuntary disconnect (not a clean `.leave()`) and a
       full page reload, not just a server-side check.
-- [ ] Phase 6 — deploy (Docker, health check)
+- [x] Phase 6 — deployed: Vercel client + Render server with `/health`
+
+## Balance, movement, items, and camera
+
+- Smooth 8-direction facing with shortest-angle damping, acceleration/deceleration,
+  normalized diagonal movement, and synced remote rotation.
+- Locked isometric camera with damped follow; zoom, drag rotation, and keyboard
+  rotation are disabled for a consistent competitive viewport.
+- Hider item boxes roll their contents server-side: Smoke, Decoy, Stun Trap, or
+  Sprint. One held item per player, Q to use, and server-authoritative effects.
+- Stun traps are sent only to hiders. Cover occupancy is filtered from seekers.
 
 ## Visual design pass (not a spec phase — user feedback)
 

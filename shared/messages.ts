@@ -45,6 +45,7 @@ export interface MoveMessage {
   x: number;
   y: number;
   anim: string;
+  rotY: number;
 }
 
 export interface CoverPointMessage {
@@ -125,3 +126,7 @@ export interface SmokeDeployedMessage {
   x: number;
   y: number;
 }
+
+export type ItemKind = "smoke" | "decoy" | "stun" | "sprint";
+export interface ItemPickedMessage { item: ItemKind }
+export interface TrapMessage { id: string; x: number; y: number }

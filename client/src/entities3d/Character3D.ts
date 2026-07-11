@@ -13,7 +13,7 @@ const NAMEPLATE_Y = 50;
 const CROSSFADE_SECONDS = 0.15;
 // Radians/sec the character can turn — fast enough to feel responsive but
 // still a smooth sweep rather than an instant snap when reversing direction.
-const FACING_TURN_SPEED = 12;
+const FACING_DAMPING = 12;
 // Kenney's rig faces its local +Z by default; adjust this if a character
 // visibly walks backward/sideways relative to where it's actually heading.
 const FACING_OFFSET = 0;
@@ -146,9 +146,18 @@ export class Character3D {
     this.mixer?.update(deltaSeconds);
     if (this.hasFacing) {
       const diff = Math.atan2(Math.sin(this.targetFacing - this.group.rotation.y), Math.cos(this.targetFacing - this.group.rotation.y));
-      const maxStep = FACING_TURN_SPEED * deltaSeconds;
-      this.group.rotation.y += Math.max(-maxStep, Math.min(maxStep, diff));
+      this.group.rotation.y += diff * (1 - Math.exp(-FACING_DAMPING * deltaSeconds));
     }
+  }
+
+  get rotationY(): number {
+    return this.group.rotation.y;
+  }
+
+  setTargetRotation(rotationY: number) {
+    if (!Number.isFinite(rotationY)) return;
+    this.targetFacing = rotationY;
+    this.hasFacing = true;
   }
 
   get position(): THREE.Vector3 {

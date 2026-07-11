@@ -27,6 +27,7 @@ import {
   type CoverPointMessage,
   type EmoteMessage,
   type UsePropMessage,
+  type ItemKind,
 } from "../../../shared/messages.js";
 
 // Looks identical to a real cover point client-side, but can never actually
@@ -79,6 +80,9 @@ export class GameRoom extends Room<GameState> {
   private monitorCooldownUntil = new Map<string, number>();
   private toiletUseCooldownUntil = new Map<string, number>();
   private firstCatchAwarded = false;
+  private itemCooldownUntil = new Map<string, number>();
+  private stunTraps: Array<{ id: string; x: number; y: number; ownerId: string }> = [];
+  private survivalMilestones = new Set<number>();
 
   async onCreate(_options: CreateRoomOptions) {
     this.setState(new GameState());
@@ -111,6 +115,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("decoy", (client) => this.handleDecoy(client));
     this.onMessage("useProp", (client, message: UsePropMessage) => this.handleUseProp(client, message));
     this.onMessage("useSmoke", (client) => this.handleUseSmoke(client));
+    this.onMessage("useItem", (client) => this.handleUseItem(client));
 
     this.clock.setInterval(() => this.tick(), 1000);
 
@@ -120,7 +125,17 @@ export class GameRoom extends Room<GameState> {
   private tick() {
     if (this.state.phase === "lobby") return;
 
-    if (this.state.phase === "seek") this.updateRelocateWindow();
+    if (this.state.phase === "seek") {
+      this.updateRelocateWindow();
+      const elapsed = GAME_CONFIG.SEEK_PHASE_SEC - this.state.timeRemaining;
+      if (elapsed > 0 && elapsed % 60 === 0 && !this.survivalMilestones.has(elapsed)) {
+        this.survivalMilestones.add(elapsed);
+        this.state.players.forEach((p) => {
+          if (p.role === "hider" && !p.isCaught) p.score += 25;
+        });
+        this.broadcastToHiders("survivalBonus", { points: 25 });
+      }
+    }
 
     this.state.timeRemaining = Math.max(0, this.state.timeRemaining - 1);
     if (this.state.timeRemaining > 0) return;
@@ -220,6 +235,7 @@ export class GameRoom extends Room<GameState> {
     this.coffeeCooldownUntil.delete(client.sessionId);
     this.monitorCooldownUntil.delete(client.sessionId);
     this.toiletUseCooldownUntil.delete(client.sessionId);
+    this.itemCooldownUntil.delete(client.sessionId);
 
     if (wasHost) this.migrateHost();
   }
@@ -296,6 +312,9 @@ export class GameRoom extends Room<GameState> {
       player.speedBoosted = false;
       player.hasSmokeBomb = false;
       player.isDazed = false;
+      player.heldItem = "";
+      player.isStunned = false;
+      player.speedMultiplier = 1;
     });
 
     this.previousSeekerIds = seekerSet;
@@ -313,6 +332,9 @@ export class GameRoom extends Room<GameState> {
     this.coffeeCooldownUntil.clear();
     this.monitorCooldownUntil.clear();
     this.toiletUseCooldownUntil.clear();
+    this.itemCooldownUntil.clear();
+    this.stunTraps = [];
+    this.survivalMilestones.clear();
     this.state.relocateActive = false;
     this.state.darkRooms.clear();
     this.state.collectedSmokeItems.clear();
@@ -370,6 +392,7 @@ export class GameRoom extends Room<GameState> {
     if (!player) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
     if (this.state.phase === "hide" && player.role === "seeker") return; // blacked out, can't move
+    if (player.isStunned) return;
     if (player.isHidden) return; // must send "unhide" first — SPACE toggles, WASD doesn't
 
     const now = Date.now();
@@ -387,26 +410,82 @@ export class GameRoom extends Room<GameState> {
     player.x = nextX;
     player.y = nextY;
     player.anim = message.anim;
+    if (Number.isFinite(message.rotY)) player.rotY = message.rotY;
     this.lastMoveAt.set(client.sessionId, now);
+
+    if (player.role === "seeker") this.checkStunTraps(player);
 
     if (player.role === "seeker") this.checkServerRoomAlarm(client.sessionId, player);
     else if (player.role === "hider") this.checkSmokeItemPickup(player);
   }
 
-  // Auto-pickup on proximity (no SPACE needed — this is a scarce collectible,
+  // Auto-pickup on proximity (no SPACE needed — item kind is rolled only now,
   // not a fixed-location gimmick prop) — at most one carried at a time, and
   // a collected spot respawns after SMOKE_ITEM_RESPAWN_MS.
   private checkSmokeItemPickup(player: Player) {
-    if (player.isCaught || player.hasSmokeBomb) return;
+    if (player.isCaught || player.heldItem) return;
     for (const spawn of SMOKE_ITEM_SPAWNS) {
       if (this.state.collectedSmokeItems.has(spawn.id)) continue;
       if (Math.hypot(player.x - spawn.x, player.y - spawn.y) > GAME_CONFIG.SMOKE_PICKUP_RANGE_PX) continue;
       this.state.collectedSmokeItems.set(spawn.id, true);
-      player.hasSmokeBomb = true;
+      const roll = Math.random();
+      const item: ItemKind = roll < 0.30 ? "smoke" : roll < 0.60 ? "decoy" : roll < 0.85 ? "stun" : "sprint";
+      player.heldItem = item;
+      player.hasSmokeBomb = item === "smoke";
+      this.clients.find((c) => c.sessionId === player.id)?.send("itemPicked", { item });
       this.clock.setTimeout(() => {
         this.state.collectedSmokeItems.delete(spawn.id);
       }, GAME_CONFIG.SMOKE_ITEM_RESPAWN_MS);
       return;
+    }
+  }
+
+  private checkStunTraps(player: Player) {
+    if (player.isStunned) return;
+    const index = this.stunTraps.findIndex((trap) => Math.hypot(player.x - trap.x, player.y - trap.y) <= GAME_CONFIG.STUN_TRAP_TRIGGER_RANGE_PX);
+    if (index < 0) return;
+    const [trap] = this.stunTraps.splice(index, 1);
+    player.isStunned = true;
+    this.inspectCooldownUntil.set(player.id, Date.now() + GAME_CONFIG.STUN_DURATION_MS);
+    this.clients.find((c) => c.sessionId === player.id)?.send("stunned", { durationMs: GAME_CONFIG.STUN_DURATION_MS });
+    this.broadcastToHiders("trapRemoved", { id: trap.id });
+    this.clock.setTimeout(() => { player.isStunned = false; }, GAME_CONFIG.STUN_DURATION_MS);
+  }
+
+  private broadcastToHiders(type: string, payload: unknown) {
+    this.clients.forEach((c) => {
+      if (this.state.players.get(c.sessionId)?.role === "hider") c.send(type, payload);
+    });
+  }
+
+  private handleUseItem(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "hider" || player.isCaught || player.isHidden || !player.heldItem) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+    const now = Date.now();
+    if (now < (this.itemCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.itemCooldownUntil.set(client.sessionId, now + GAME_CONFIG.ITEM_USE_COOLDOWN_MS);
+    const item = player.heldItem as ItemKind;
+    player.heldItem = "";
+    player.hasSmokeBomb = false;
+    if (item === "smoke") this.deploySmoke(player);
+    else if (item === "decoy") this.handleDecoy(client, true);
+    else if (item === "sprint") {
+      player.speedMultiplier = GAME_CONFIG.SPRINT_MULTIPLIER;
+      this.clock.setTimeout(() => { player.speedMultiplier = 1; }, GAME_CONFIG.SPRINT_DURATION_MS);
+    } else if (item === "stun") {
+      const trap = { id: `trap-${client.sessionId}-${now}`, x: player.x, y: player.y, ownerId: client.sessionId };
+      this.stunTraps.push(trap);
+      this.broadcastToHiders("trapPlaced", trap);
+      if (this.stunTraps.length > GAME_CONFIG.MAX_STUN_TRAPS) {
+        const removed = this.stunTraps.shift()!;
+        this.broadcastToHiders("trapRemoved", { id: removed.id });
+      }
+      this.clock.setTimeout(() => {
+        const i = this.stunTraps.findIndex((t) => t.id === trap.id);
+        if (i >= 0) this.stunTraps.splice(i, 1);
+        this.broadcastToHiders("trapRemoved", { id: trap.id });
+      }, GAME_CONFIG.STUN_TRAP_LIFETIME_MS);
     }
   }
 
@@ -552,14 +631,14 @@ export class GameRoom extends Room<GameState> {
   // Hider ability: throw a fake "noise" at a random unoccupied cover point,
   // seen only by seekers — never picks an actually-occupied spot, so it can
   // never accidentally rat out a hiding teammate.
-  private handleDecoy(client: Client) {
+  private handleDecoy(client: Client, bypassCooldown = false) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
 
     const now = Date.now();
-    if (now < (this.decoyCooldownUntil.get(client.sessionId) ?? 0)) return;
-    this.decoyCooldownUntil.set(client.sessionId, now + GAME_CONFIG.DECOY_COOLDOWN_MS);
+    if (!bypassCooldown && now < (this.decoyCooldownUntil.get(client.sessionId) ?? 0)) return;
+    if (!bypassCooldown) this.decoyCooldownUntil.set(client.sessionId, now + GAME_CONFIG.DECOY_COOLDOWN_MS);
 
     const unoccupied = [...this.state.coverPoints.values()].filter((cp) => !cp.isOccupied);
     const pool = unoccupied.length > 0 ? unoccupied : [...this.state.coverPoints.values()];
@@ -677,6 +756,11 @@ export class GameRoom extends Room<GameState> {
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
 
     player.hasSmokeBomb = false;
+    player.heldItem = "";
+    this.deploySmoke(player);
+  }
+
+  private deploySmoke(player: Player) {
     this.clients.forEach((c) => c.send("smokeDeployed", { x: player.x, y: player.y }));
 
     this.state.players.forEach((target) => {

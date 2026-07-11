@@ -605,7 +605,7 @@ const CEILING_LIGHTS_RAW: { x: number; y: number }[] = [
 
 export const CEILING_LIGHTS: { x: number; y: number }[] = CEILING_LIGHTS_RAW.map(scaleXY);
 
-// Smoke-bomb pickups — scattered across the open cubicle floor (not inside
+// Random item-box pickups — scattered across the open cubicle floor (not inside
 // any specific room), a scarce resource hiders must walk over to collect,
 // distinct from the always-available cooldown-gated decoy ability.
 export interface SmokeItemSpawnDef {

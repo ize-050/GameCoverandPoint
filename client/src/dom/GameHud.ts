@@ -5,8 +5,7 @@ const URGENT_TIME_SEC = 30;
 const HELP_HTML = `
   <div style="font-weight:800;margin-bottom:10px;">วิธีเล่น</div>
   <div style="margin-bottom:6px;">${icon("keyboard", { size: 15 })} WASD / ลูกศร — เดิน</div>
-  <div style="margin-bottom:6px;">Q E — หมุนกล้องรอบตัว 360°</div>
-  <div style="margin-bottom:6px;">ลากเมาส์ — หมุนกล้อง / เลื่อนล้อเมาส์ — ซูมเข้า-ออก</div>
+  <div style="margin-bottom:6px;">กล้อง isometric ล็อกมุมและซูมเท่ากันสำหรับผู้เล่นทุกคน</div>
   <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
   <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
@@ -16,8 +15,7 @@ const HELP_HTML = `
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("hider", { size: 16, color: "#fbbf24" })} <b>คนซ่อน</b></div>
   <div style="margin-bottom:4px;">เดินไปจุดซ่อน กด SPACE เพื่อซ่อน หรือย้ายที่ซ่อนได้ตลอดเวลา</div>
   <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
-  <div style="margin-bottom:4px;">F — ล่อคนหาด้วยเสียง</div>
-  <div style="margin-bottom:4px;">เดินผ่านระเบิดควันที่กระจายอยู่ตามพื้นเพื่อเก็บ (ถืออันเดียว) แล้วกด G ตอนคนหาเข้าใกล้ เพื่อให้คนหามึนงงและเดินช้าลงชั่วคราว</div>
+  <div style="margin-bottom:4px;">เดินผ่านกล่องของขวัญเพื่อสุ่มไอเท็ม และกด Q เพื่อใช้ (ถือได้ครั้งละ 1 ชิ้น)</div>
   <div style="margin-bottom:12px;">เข้าใกล้ของในห้องแล้วกด SPACE: กระดาน (หลอกคนหา) / เครื่องชงกาแฟ (วิ่งเร็วขึ้น) / จอมอนิเตอร์ (ดูตำแหน่งห้องของคนหา)</div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>สวิตช์ไฟ (ทุกคน)</b></div>
   <div style="margin-bottom:4px;">เข้าใกล้สวิตช์ข้างประตูแล้วกด SPACE เพื่อเปิด/ปิดไฟห้องนั้น</div>
@@ -46,12 +44,13 @@ export class GameHud {
   private helpPanelEl: HTMLDivElement;
   private abilitiesEl: HTMLDivElement;
   private hintEl: HTMLDivElement;
+  private itemEl: HTMLDivElement;
   private roleBannerTimeout?: ReturnType<typeof setTimeout>;
   private feedbackTimeout?: ReturnType<typeof setTimeout>;
   private helpVisible = false;
 
-  constructor(callbacks: { onEmote: (id: number) => void; onDecoy: () => void }) {
-    const { onEmote, onDecoy } = callbacks;
+  constructor(callbacks: { onEmote: (id: number) => void; onDecoy: () => void; onUseItem: () => void }) {
+    const { onEmote, onDecoy, onUseItem } = callbacks;
     this.root = document.createElement("div");
     this.root.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:5;font-family:'Segoe UI',system-ui,sans-serif;";
     this.root.innerHTML = `
@@ -71,6 +70,7 @@ export class GameHud {
       <div id="hudHelpPanel" style="position:absolute;top:70px;right:24px;width:280px;background:#0a0f1cf0;border:2px solid #22d3ee80;border-radius:12px;padding:16px;color:#f1f5f9;font-size:13px;line-height:1.6;display:none;"></div>
       <div id="hudHint" style="position:absolute;bottom:118px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#fff;background:#000000aa;padding:6px 14px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
       <div id="hudAbilities" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);display:none;gap:14px;pointer-events:auto;"></div>
+      <div id="hudItem" style="position:absolute;bottom:24px;left:24px;min-width:150px;color:#fff;background:#0f172acc;border:1px solid #ffffff33;border-radius:12px;padding:10px 14px;display:none;pointer-events:auto;font-weight:700;"></div>
       <div id="hudEmotes" style="position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:10px;pointer-events:auto;"></div>
     `;
     document.body.appendChild(this.root);
@@ -87,6 +87,8 @@ export class GameHud {
     this.helpPanelEl.innerHTML = HELP_HTML;
     this.abilitiesEl = this.root.querySelector("#hudAbilities") as HTMLDivElement;
     this.hintEl = this.root.querySelector("#hudHint") as HTMLDivElement;
+    this.itemEl = this.root.querySelector("#hudItem") as HTMLDivElement;
+    this.itemEl.addEventListener("click", onUseItem);
 
     (this.root.querySelector("#hudHelpBtn") as HTMLButtonElement).addEventListener("click", () => {
       this.helpVisible = !this.helpVisible;
@@ -102,13 +104,7 @@ export class GameHud {
       emotesEl.appendChild(btn);
     });
 
-    const abilityBtnStyle =
-      "font-size:14px;font-weight:700;background:#1e293bcc;color:#f1f5f9;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;";
-    const decoyBtn = document.createElement("button");
-    decoyBtn.innerHTML = `${icon("bell", { size: 16, color: "#fbbf24" })} ล่อ (F)`;
-    decoyBtn.style.cssText = abilityBtnStyle;
-    decoyBtn.addEventListener("click", () => onDecoy());
-    this.abilitiesEl.append(decoyBtn);
+    void onDecoy;
   }
 
   destroy() {
@@ -173,6 +169,14 @@ export class GameHud {
 
   setDazed(active: boolean) {
     this.dazedEl.style.opacity = active ? "1" : "0";
+  }
+
+  setHeldItem(item: string, visible: boolean) {
+    this.itemEl.style.display = visible ? "block" : "none";
+    if (!visible) return;
+    const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
+    this.itemEl.textContent = item ? `${labels[item] ?? item} · กด Q ใช้` : "ช่องไอเท็มว่าง";
+    this.itemEl.style.opacity = item ? "1" : "0.55";
   }
 
   setBlackout(active: boolean, timeRemaining: number) {
