@@ -139,3 +139,12 @@ export interface SmokeDeployedMessage {
 export type ItemKind = "smoke" | "decoy" | "stun" | "sprint";
 export interface ItemPickedMessage { item: ItemKind }
 export interface TrapMessage { id: string; x: number; y: number }
+
+// server -> the triggering seeker only (private one-shot snapshot, never a
+// live/continuous exposure) — hidden hiders caught within the scan/trace
+// radius at the instant it fired. Position filtering still applies to
+// everything else; this is a deliberate, cooldown-gated exception.
+export interface RevealPingMessage {
+  points: { x: number; y: number }[];
+  durationMs: number;
+}

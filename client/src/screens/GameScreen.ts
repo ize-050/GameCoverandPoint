@@ -32,6 +32,7 @@ import type {
   MonitorPeekMessage,
   ToiletUseMessage,
   SmokeDeployedMessage,
+  RevealPingMessage,
   ItemPickedMessage,
   TrapMessage,
 } from "../../../shared/messages";
@@ -93,6 +94,7 @@ function propHintText(kind: RoomPropDef["kind"]): string {
   if (kind === "coffee-machine") return "[SPACE] ดื่มกาแฟ (เร็วขึ้นชั่วคราว)";
   if (kind === "light-switch") return "[SPACE] เปิด/ปิดไฟห้องนี้";
   if (kind === "toilet-use") return "[SPACE] เข้าห้องน้ำ";
+  if (kind === "trace-terminal") return "[SPACE] เทรซสัญญาณ (เห็นตำแหน่งคนซ่อนทุกคน 10 วิ)";
   return "[SPACE] แอบดูจอมอนิเตอร์";
 }
 
@@ -132,6 +134,8 @@ const ACTIVE_PROP_KINDS = new Set<RoomPropDef["kind"]>(["whiteboard", "coffee-ma
 const LIGHT_SWITCH_KIND = new Set<RoomPropDef["kind"]>(["light-switch"]);
 // Comedic toilet-use gag — also universal/any-role, no gameplay effect.
 const TOILET_USE_KIND = new Set<RoomPropDef["kind"]>(["toilet-use"]);
+// Seeker-only ability anchor (reception hub) — long-cooldown reveal.
+const TRACE_TERMINAL_KIND = new Set<RoomPropDef["kind"]>(["trace-terminal"]);
 const TOILET_USE_ANIM_MS = 2200;
 const URGENT_TIME_SEC = 30;
 const BASE_AMBIENT_INTENSITY = 0.7;
@@ -338,6 +342,9 @@ export class GameScreen implements Screen {
           }
           if (keyboard.justDown("KeyC")) this.cycleTeammateCamera();
         }
+        if (this.myPlayer.role === "seeker") {
+          if (keyboard.justDown("KeyF")) this.room!.send("scanPulse");
+        }
       }
     }
 
@@ -350,7 +357,14 @@ export class GameScreen implements Screen {
     if (canUseMap && keyboard.justDown("KeyM")) this.minimap?.toggle();
     if (canUseMap && this.localPlayer) {
       const pos = this.localPlayer.character.position;
-      this.minimap?.render({ x: pos.x, z: pos.z }, this.remotePlayers, new Map(this.room?.state.missions.entries() ?? []));
+      // Hiders must never see the seeker's position on the minimap — that
+      // would trivialize "is the coast clear" tension. Ghosts (spectators)
+      // are exempt and still see everyone, same as their 3D-world visibility.
+      const viewerIsGhost = this.myPlayer?.isCaught ?? false;
+      const minimapRemotes = viewerIsGhost
+        ? this.remotePlayers
+        : new Map([...this.remotePlayers].filter(([sessionId]) => this.room?.state.players.get(sessionId)?.role !== "seeker"));
+      this.minimap?.render({ x: pos.x, z: pos.z }, minimapRemotes, new Map(this.room?.state.missions.entries() ?? []));
     }
 
     this.updateDarkRoomOverlays(dt);
@@ -536,6 +550,20 @@ export class GameScreen implements Screen {
       playSmokeDeploySfx();
     });
     this.unsubs.push(offSmokeDeployed);
+
+    // Both scan (small radius, short cooldown) and the trace terminal
+    // (map-wide, long cooldown) are one-shot private snapshots — same
+    // rendering, just different point counts/duration.
+    const offScanResult = room.onMessage("scanResult", (msg: RevealPingMessage) => {
+      this.playRevealBeacons(msg.points, msg.durationMs);
+    });
+    this.unsubs.push(offScanResult);
+
+    const offTraceReveal = room.onMessage("traceReveal", (msg: RevealPingMessage) => {
+      this.playRevealBeacons(msg.points, msg.durationMs);
+      this.hud?.showFeedback(`${icon("target", { size: 18, color: "#facc15" })} เทรซสัญญาณสำเร็จ! เห็นตำแหน่งคนซ่อน ${msg.points.length} คน`);
+    });
+    this.unsubs.push(offTraceReveal);
 
     const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
       const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
@@ -797,6 +825,44 @@ export class GameScreen implements Screen {
     }
   }
 
+  // Scan/trace reveal — a golden beacon (ground ring + vertical light beam)
+  // at each snapshot position, held steady for the reveal duration then
+  // fading out — this client-side timer is the ONLY thing tracking "how
+  // long the reveal lasts," the server doesn't need to send an end event.
+  private playRevealBeacons(points: { x: number; y: number }[], durationMs: number) {
+    for (const point of points) {
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(10, 15, 24), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(point.x, 2, point.y);
+      this.scene.add(ring);
+
+      const beamMat = new THREE.MeshBasicMaterial({ color: 0xfde68a, transparent: true, opacity: 0.35 });
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 80, 10, 1, true), beamMat);
+      beam.position.set(point.x, 40, point.y);
+      this.scene.add(beam);
+
+      const cleanup = () => {
+        this.scene.remove(ring, beam);
+        ring.geometry.dispose();
+        ringMat.dispose();
+        beam.geometry.dispose();
+        beamMat.dispose();
+      };
+      const fadeMs = 500;
+      new TWEEN.Tween({ opacity: 1 })
+        .to({ opacity: 0 }, fadeMs)
+        .delay(Math.max(0, durationMs - fadeMs))
+        .easing(TWEEN.Easing.Cubic.In)
+        .onUpdate((state) => {
+          ringMat.opacity = 0.85 * state.opacity;
+          beamMat.opacity = 0.35 * state.opacity;
+        })
+        .onComplete(cleanup)
+        .start();
+    }
+  }
+
   private showEmoteAbove(sessionId: string, id: number) {
     const group = this.getGroupFor(sessionId);
     const iconName = EMOTE_ICON_NAMES[id - 1];
@@ -912,6 +978,8 @@ export class GameScreen implements Screen {
 
     if (me.role === "seeker") {
       if (this.findNearestExposedHider(GAME_CONFIG.TAG_RANGE_PX)) return "[SPACE] จับ!";
+      const trace = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, TRACE_TERMINAL_KIND);
+      if (trace) return propHintText(trace.kind);
       const cp = this.findNearestCoverPoint(GAME_CONFIG.INSPECT_RANGE_PX);
       if (!cp) return null;
       return me.inspectsRemaining > 0 ? "[SPACE] ตรวจจุดนี้" : `${icon("blocked", { size: 14 })} หมดโควตาตรวจแล้ว`;
@@ -978,6 +1046,12 @@ export class GameScreen implements Screen {
       const target = this.findNearestExposedHider(GAME_CONFIG.TAG_RANGE_PX);
       if (target) {
         this.room?.send("tag");
+        return;
+      }
+
+      const trace = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, TRACE_TERMINAL_KIND);
+      if (trace) {
+        this.room?.send("useProp", { propId: trace.id });
         return;
       }
 
@@ -1671,6 +1745,23 @@ export class GameScreen implements Screen {
         // real fixture) — stays this small procedural marker permanently.
         obj = new THREE.Mesh(new THREE.CylinderGeometry(2 * S, 2 * S, 6 * S, 8), new THREE.MeshStandardMaterial({ color: 0xf5f5f0 }));
         y = 3 * S;
+      } else if (prop.kind === "trace-terminal") {
+        // Seeker's own console — amber/gold instead of the hider mission
+        // terminal's cyan, so the two read as visually distinct at a glance.
+        const group = new THREE.Group();
+        const pedestal = new THREE.Mesh(new THREE.BoxGeometry(18 * S, 26 * S, 14 * S), new THREE.MeshStandardMaterial({ color: 0x3f2d0f }));
+        pedestal.position.y = 13 * S;
+        const screen = new THREE.Mesh(
+          new THREE.BoxGeometry(22 * S, 15 * S, 3 * S),
+          new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xb45309, emissiveIntensity: 0.75 })
+        );
+        screen.position.set(0, 30 * S, -5 * S);
+        const dish = new THREE.Mesh(new THREE.CylinderGeometry(9 * S, 9 * S, 2 * S, 16), new THREE.MeshStandardMaterial({ color: 0xe2e8f0 }));
+        dish.position.set(0, 40 * S, -5 * S);
+        dish.rotation.x = Math.PI / 3;
+        group.add(pedestal, screen, dish);
+        obj = group;
+        y = 0;
       } else if (prop.kind === "window") {
         obj = new THREE.Mesh(new THREE.BoxGeometry(44 * S, 34 * S, 2 * S), new THREE.MeshStandardMaterial({ map: windowTex }));
         y = 34 * S;

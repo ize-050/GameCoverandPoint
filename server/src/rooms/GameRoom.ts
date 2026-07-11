@@ -84,6 +84,9 @@ export class GameRoom extends Room<GameState> {
   private itemCooldownUntil = new Map<string, number>();
   private stunTraps: Array<{ id: string; x: number; y: number; ownerId: string }> = [];
   private survivalMilestones = new Set<number>();
+  private missionCooldownUntil = new Map<string, number>();
+  private scanCooldownUntil = new Map<string, number>();
+  private traceCooldownUntil = new Map<string, number>();
 
   async onCreate(_options: CreateRoomOptions) {
     this.setState(new GameState());
@@ -116,6 +119,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("decoy", (client) => this.handleDecoy(client));
     this.onMessage("useProp", (client, message: UsePropMessage) => this.handleUseProp(client, message));
     this.onMessage("useSmoke", (client) => this.handleUseSmoke(client));
+    this.onMessage("scanPulse", (client) => this.handleScanPulse(client));
     this.onMessage("useItem", (client) => this.handleUseItem(client));
     this.onMessage("completeMission", (client, message: { missionId?: string }) => this.handleCompleteMission(client, message));
 
@@ -238,6 +242,9 @@ export class GameRoom extends Room<GameState> {
     this.monitorCooldownUntil.delete(client.sessionId);
     this.toiletUseCooldownUntil.delete(client.sessionId);
     this.itemCooldownUntil.delete(client.sessionId);
+    this.missionCooldownUntil.delete(client.sessionId);
+    this.scanCooldownUntil.delete(client.sessionId);
+    this.traceCooldownUntil.delete(client.sessionId);
 
     if (wasHost) this.migrateHost();
   }
@@ -335,6 +342,9 @@ export class GameRoom extends Room<GameState> {
     this.monitorCooldownUntil.clear();
     this.toiletUseCooldownUntil.clear();
     this.itemCooldownUntil.clear();
+    this.missionCooldownUntil.clear();
+    this.scanCooldownUntil.clear();
+    this.traceCooldownUntil.clear();
     this.stunTraps = [];
     this.survivalMilestones.clear();
     this.state.relocateActive = false;
@@ -498,10 +508,13 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isHidden) return;
     if (!message?.missionId || !this.state.missions.has(message.missionId) || this.state.missions.get(message.missionId)) return;
+    const now = Date.now();
+    if (now < (this.missionCooldownUntil.get(client.sessionId) ?? 0)) return;
     const mission = MISSION_POOL.find((candidate) => candidate.id === message.missionId);
     const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
     if (!mission || !prop || Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
 
+    this.missionCooldownUntil.set(client.sessionId, now + GAME_CONFIG.MISSION_COOLDOWN_MS);
     this.state.missions.set(mission.id, true);
     player.score += MISSION_SCORE;
     this.broadcast("missionComplete", { missionId: mission.id, title: mission.title, nickname: player.nickname, points: MISSION_SCORE });
@@ -700,10 +713,55 @@ export class GameRoom extends Room<GameState> {
       this.triggerToiletUse(client);
       return;
     }
+    if (prop.kind === "trace-terminal") {
+      this.triggerTraceTerminal(client, player);
+      return;
+    }
     if (player.role !== "hider") return;
     if (prop.kind === "whiteboard") this.triggerWhiteboardDecoy(client);
     else if (prop.kind === "coffee-machine") this.triggerCoffeeBoost(client, player);
     else if (prop.kind === "monitor") this.triggerMonitorPeek(client);
+  }
+
+  // Seeker's "scan" ability (F key) — a one-shot private snapshot of every
+  // currently-HIDDEN hider within radius, not a live/continuous exposure.
+  // Exposed (non-hidden) hiders aren't included — they're already visible
+  // to the seeker in the 3D world via the normal visibility rules, so
+  // there's nothing this ability needs to reveal about them.
+  private handleScanPulse(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "seeker" || player.isCaught) return;
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+
+    const now = Date.now();
+    if (now < (this.scanCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.scanCooldownUntil.set(client.sessionId, now + GAME_CONFIG.SCAN_COOLDOWN_MS);
+
+    const points: { x: number; y: number }[] = [];
+    this.state.players.forEach((hider) => {
+      if (hider.role !== "hider" || hider.isCaught || !hider.isHidden) return;
+      if (Math.hypot(hider.x - player.x, hider.y - player.y) <= GAME_CONFIG.SCAN_RADIUS_PX) {
+        points.push({ x: hider.x, y: hider.y });
+      }
+    });
+    client.send("scanResult", { points, durationMs: GAME_CONFIG.SCAN_REVEAL_DURATION_MS });
+  }
+
+  // Seeker's "trace terminal" mission (reception hub, long cooldown) — same
+  // one-shot-snapshot approach as scan, but map-wide and including exposed
+  // hiders too, matching its bigger payoff/cooldown.
+  private triggerTraceTerminal(client: Client, player: Player) {
+    if (player.role !== "seeker") return;
+    const now = Date.now();
+    if (now < (this.traceCooldownUntil.get(client.sessionId) ?? 0)) return;
+    this.traceCooldownUntil.set(client.sessionId, now + GAME_CONFIG.TRACE_COOLDOWN_MS);
+
+    const points: { x: number; y: number }[] = [];
+    this.state.players.forEach((hider) => {
+      if (hider.role !== "hider" || hider.isCaught) return;
+      points.push({ x: hider.x, y: hider.y });
+    });
+    client.send("traceReveal", { points, durationMs: GAME_CONFIG.TRACE_REVEAL_DURATION_MS });
   }
 
   // Universal light switch: any role, any room, toggle on/off via the

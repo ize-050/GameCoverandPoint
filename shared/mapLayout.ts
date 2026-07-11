@@ -538,7 +538,8 @@ export type RoomPropKind =
   | "wall-clock"
   | "bulletin-board"
   | "water-cooler"
-  | "report-terminal";
+  | "report-terminal"
+  | "trace-terminal";
 export interface RoomPropDef {
   id: string;
   x: number;
@@ -603,6 +604,10 @@ const ROOM_PROPS_RAW: RoomPropDef[] = [
   { id: "window-meeting", x: 5730, y: 2400, kind: "window" },
   { id: "reception-clock", x: 3550, y: 3700, kind: "wall-clock" },
   { id: "reception-bulletin", x: 2900, y: 4260, kind: "bulletin-board" },
+  // Seeker-only ability anchor — a "security trace" terminal in the hub
+  // room they already start in. Long cooldown, big payoff (reveals every
+  // hider's position briefly), unlike the hider mission props above.
+  { id: "trace-terminal", x: 3150, y: 4150, kind: "trace-terminal" },
   { id: "lounge-water-cooler", x: 2850, y: 1050, kind: "water-cooler" },
 ];
 
