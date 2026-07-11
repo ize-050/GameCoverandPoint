@@ -431,6 +431,8 @@ export class GameScreen implements Screen {
     const activeMissions = MISSION_POOL.filter((mission) => this.room!.state.missions.has(mission.id));
     const completedMissions = new Set(activeMissions.filter((mission) => this.room!.state.missions.get(mission.id)).map((mission) => mission.id));
     this.hud.setMissions(activeMissions, completedMissions, this.myPlayer?.role === "hider" && phase === "seek" && activeMissions.length > 0);
+    const showSeekerMission = this.myPlayer?.role === "seeker" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
+    this.hud.setSeekerMission(!!showSeekerMission);
 
     this.hud.setHint(this.computeHint(phase));
 
@@ -836,29 +838,45 @@ export class GameScreen implements Screen {
     }
   }
 
-  // Scan/trace reveal — a golden beacon (ground ring + vertical light beam)
-  // at each snapshot position, held steady for the reveal duration then
-  // fading out — this client-side timer is the ONLY thing tracking "how
-  // long the reveal lasts," the server doesn't need to send an end event.
+  // Scan/trace reveal — a dark humanoid shadow silhouette standing at each
+  // snapshot position (not just an abstract marker), held for the reveal
+  // duration then fading out. This client-side timer is the ONLY thing
+  // tracking "how long the reveal lasts" — the server doesn't send an end event.
   private playRevealBeacons(points: { x: number; y: number }[], durationMs: number) {
     for (const point of points) {
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-      const ring = new THREE.Mesh(new THREE.RingGeometry(10, 15, 24), ringMat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(point.x, 2, point.y);
-      this.scene.add(ring);
+      const shadowMat = new THREE.MeshBasicMaterial({ color: 0x05050a, transparent: true, opacity: 0.85 });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(9, 22, 4, 12), shadowMat);
+      body.position.y = 22;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(8, 12, 10), shadowMat);
+      head.position.y = 40;
 
-      const beamMat = new THREE.MeshBasicMaterial({ color: 0xfde68a, transparent: true, opacity: 0.35 });
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 80, 10, 1, true), beamMat);
-      beam.position.set(point.x, 40, point.y);
-      this.scene.add(beam);
+      const groundMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+      const ground = new THREE.Mesh(new THREE.CircleGeometry(13, 20), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = 1;
+
+      const group = new THREE.Group();
+      group.add(ground, body, head);
+      group.position.set(point.x, 0, point.y);
+      this.scene.add(group);
+
+      // Subtle idle bob so it reads as "a figure standing there," not a
+      // static cardboard cutout.
+      const bobTween = new TWEEN.Tween(group.position)
+        .to({ y: 3 }, 700)
+        .yoyo(true)
+        .repeat(Infinity)
+        .easing(TWEEN.Easing.Sinusoidal.InOut)
+        .start();
 
       const cleanup = () => {
-        this.scene.remove(ring, beam);
-        ring.geometry.dispose();
-        ringMat.dispose();
-        beam.geometry.dispose();
-        beamMat.dispose();
+        bobTween.stop();
+        this.scene.remove(group);
+        body.geometry.dispose();
+        head.geometry.dispose();
+        shadowMat.dispose();
+        ground.geometry.dispose();
+        groundMat.dispose();
       };
       const fadeMs = 500;
       new TWEEN.Tween({ opacity: 1 })
@@ -866,8 +884,8 @@ export class GameScreen implements Screen {
         .delay(Math.max(0, durationMs - fadeMs))
         .easing(TWEEN.Easing.Cubic.In)
         .onUpdate((state) => {
-          ringMat.opacity = 0.85 * state.opacity;
-          beamMat.opacity = 0.35 * state.opacity;
+          shadowMat.opacity = 0.85 * state.opacity;
+          groundMat.opacity = 0.5 * state.opacity;
         })
         .onComplete(cleanup)
         .start();
