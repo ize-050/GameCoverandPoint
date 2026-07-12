@@ -145,8 +145,8 @@ const TOILET_USE_KIND = new Set<RoomPropDef["kind"]>(["toilet-use"]);
 const TRACE_TERMINAL_KIND = new Set<RoomPropDef["kind"]>(["trace-terminal"]);
 const TOILET_USE_ANIM_MS = 2200;
 const URGENT_TIME_SEC = 30;
-const BASE_AMBIENT_INTENSITY = 0.7;
-const BASE_SUN_INTENSITY = 0.95;
+const BASE_AMBIENT_INTENSITY = 0.52;
+const BASE_SUN_INTENSITY = 1.12;
 // Lowered further (was 0.12/0.05) to pair with the near-opaque darkness
 // overlay (DARKNESS_ALPHA) — the goal is "the lights are actually off", not
 // just dim, for whoever is standing inside the dark room themselves too.
@@ -346,6 +346,13 @@ export class GameScreen implements Screen {
       });
       const cameraRemote = performance.now() < this.teammateCameraUntil ? this.remotePlayers.get(this.cameraTargetPlayerId) : undefined;
       this.desiredFollowTarget.copy(cameraRemote?.character.position ?? this.localPlayer.character.position);
+      // Keep the orthographic frustum inside the playable floor. Without
+      // this, players near an outside wall see a large black void.
+      const viewAspect = window.innerWidth / Math.max(1, window.innerHeight);
+      const cameraMarginX = Math.min(MAP_WIDTH / 2, this.cameraZoom * viewAspect * 0.98);
+      const cameraMarginZ = Math.min(MAP_HEIGHT / 2, this.cameraZoom * 0.98);
+      this.desiredFollowTarget.x = THREE.MathUtils.clamp(this.desiredFollowTarget.x, cameraMarginX, MAP_WIDTH - cameraMarginX);
+      this.desiredFollowTarget.z = THREE.MathUtils.clamp(this.desiredFollowTarget.z, cameraMarginZ, MAP_HEIGHT - cameraMarginZ);
 
       // NOT gated on canMove — canMove excludes isHidden (so WASD doesn't
       // drag a hidden player around), but SPACE's own job while hidden is
@@ -1514,7 +1521,7 @@ export class GameScreen implements Screen {
     const tex = generateGroundTexture();
     tex.repeat.set(MAP_WIDTH / GROUND_TEX_WORLD_SIZE, MAP_HEIGHT / GROUND_TEX_WORLD_SIZE);
     const geo = new THREE.PlaneGeometry(MAP_WIDTH, MAP_HEIGHT);
-    const mat = new THREE.MeshStandardMaterial({ map: tex });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, color: 0x718096, roughness: 0.96, metalness: 0.02 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
@@ -1536,6 +1543,22 @@ export class GameScreen implements Screen {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(wall.w, WALL_HEIGHT, wall.h), mat);
       mesh.position.set(wall.x + wall.w / 2, WALL_HEIGHT / 2, wall.y + wall.h / 2);
       this.scene.add(mesh);
+
+      // Dark wall caps and room-coloured baseboards make the office plan
+      // readable from the isometric camera and stop walls looking like
+      // unshaded blocks.
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(wall.w + 2, 3, wall.h + 2),
+        new THREE.MeshStandardMaterial({ color: 0x243244, roughness: 0.72 })
+      );
+      cap.position.set(cx, WALL_HEIGHT + 1.5, cz);
+      this.scene.add(cap);
+      const baseboard = new THREE.Mesh(
+        new THREE.BoxGeometry(wall.w + 1, 6, wall.h + 1),
+        new THREE.MeshStandardMaterial({ color: style?.accent ?? 0x64748b, roughness: 0.8 })
+      );
+      baseboard.position.set(cx, 3, cz);
+      this.scene.add(baseboard);
     }
   }
 
@@ -1686,17 +1709,55 @@ export class GameScreen implements Screen {
   }
 
   private buildDecorations() {
-    const plantTex = generatePlantSmallTexture();
-    const papersTex = generatePapersTexture();
     const binMat = new THREE.MeshStandardMaterial({ color: 0x5b6470 });
     const boxMat = new THREE.MeshStandardMaterial({ color: 0xb08d57 });
     const rackMat = new THREE.MeshStandardMaterial({ color: 0x6b7280 });
 
     DECORATIONS.forEach((deco, i) => {
       if (deco.kind === "bin") {
-        const bin = new THREE.Mesh(new THREE.CylinderGeometry(4, 3, 8, 10), binMat);
-        bin.position.set(deco.x, 4, deco.y);
+        const bin = new THREE.Mesh(new THREE.CylinderGeometry(7, 5.5, 14, 12), binMat);
+        bin.position.set(deco.x, 7, deco.y);
         this.scene.add(bin);
+        return;
+      }
+
+      if (deco.kind === "plant-small") {
+        const plant = new THREE.Group();
+        const pot = new THREE.Mesh(
+          new THREE.CylinderGeometry(7, 5.5, 11, 12),
+          new THREE.MeshStandardMaterial({ color: i % 2 ? 0xc26d3a : 0x3d7c78, roughness: 0.82 })
+        );
+        pot.position.y = 5.5;
+        plant.add(pot);
+        const leafMat = new THREE.MeshStandardMaterial({ color: i % 3 ? 0x3f8f55 : 0x67a34f, roughness: 0.9 });
+        for (let leaf = 0; leaf < 5; leaf += 1) {
+          const blade = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 6), leafMat);
+          blade.scale.set(0.65, 1.7, 0.45);
+          const angle = (leaf / 5) * Math.PI * 2;
+          blade.position.set(Math.cos(angle) * 4, 17 + (leaf % 2) * 4, Math.sin(angle) * 4);
+          blade.rotation.z = Math.cos(angle) * 0.35;
+          blade.rotation.x = Math.sin(angle) * 0.35;
+          plant.add(blade);
+        }
+        plant.position.set(deco.x, 0, deco.y);
+        this.scene.add(plant);
+        return;
+      }
+
+      if (deco.kind === "papers") {
+        const paperGroup = new THREE.Group();
+        const paperColours = [0xf8fafc, 0xffe7a3, 0xb9e5ff];
+        for (let page = 0; page < 3; page += 1) {
+          const sheet = new THREE.Mesh(
+            new THREE.BoxGeometry(15, 0.45, 11),
+            new THREE.MeshStandardMaterial({ color: paperColours[(i + page) % paperColours.length], roughness: 0.95 })
+          );
+          sheet.position.set(page * 3 - 3, 0.35 + page * 0.4, page * 1.6 - 1.6);
+          sheet.rotation.y = (page - 1) * 0.18;
+          paperGroup.add(sheet);
+        }
+        paperGroup.position.set(deco.x, 0.3, deco.y);
+        this.scene.add(paperGroup);
         return;
       }
 
@@ -1706,20 +1767,13 @@ export class GameScreen implements Screen {
       if (deco.kind === "cardboard-box" || deco.kind === "coat-rack") {
         const obj =
           deco.kind === "cardboard-box"
-            ? new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), boxMat)
-            : new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 22, 6), rackMat);
-        obj.position.set(deco.x, deco.kind === "cardboard-box" ? 5 : 11, deco.y);
+            ? new THREE.Mesh(new THREE.BoxGeometry(18, 16, 16), boxMat)
+            : new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2.2, 32, 8), rackMat);
+        obj.position.set(deco.x, deco.kind === "cardboard-box" ? 8 : 16, deco.y);
         this.scene.add(obj);
         this.roomPropModelTargets.push({ id: `deco-${deco.kind}-${i}`, kind: deco.kind, obj });
         return;
       }
-
-      const tex = deco.kind === "plant-small" ? plantTex : papersTex;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-      const scale = deco.kind === "plant-small" ? 14 : 10;
-      sprite.scale.set(scale, scale, 1);
-      sprite.position.set(deco.x, scale / 2, deco.y);
-      this.scene.add(sprite);
     });
   }
 

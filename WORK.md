@@ -317,3 +317,13 @@ git status
 - รักษา character preview, create room และ join room flow เดิม
 - สร้าง key art แบบ voxel/isometric office โดยใช้ built-in image generation และเก็บไว้ที่ `client/public/images/office-escape-hero.png`
 - หน้าแรกและ error messages เปลี่ยนเป็นภาษาอังกฤษให้สอดคล้องกับชื่อห้องในเกม
+
+## Runtime Map Art Direction Pass
+
+- ปรับกล้อง isometric ไม่ให้เลื่อนพ้นขอบพื้นแผนที่ จึงไม่เห็นพื้นที่ดำขนาดใหญ่เมื่อผู้เล่นอยู่ติดผนังด้านนอก
+- ลด ambient light และเพิ่ม directional light เพื่อให้เฟอร์นิเจอร์ ผนัง และตัวละครมีรูปทรง/เงาที่อ่านง่ายขึ้น
+- ทำพื้นรวมให้เข้มและด้านขึ้น ลดความรู้สึกเป็นกระเบื้องสีขาวโล่ง ๆ และช่วยดันสีประจำห้องให้เด่น
+- เพิ่ม dark wall cap และ baseboard สี accent ของแต่ละห้อง ทำให้ผัง office และขอบเขตห้องชัดจากมุมกล้องด้านบน
+- เปลี่ยนต้นไม้จิ๋วและกองเอกสารจาก sprite แบนเป็น geometry 3D พร้อมเพิ่มขนาดถังขยะ กล่อง และ coat rack
+- รักษา collision, mission positions, minimap และ gameplay layout เดิมทั้งหมด การปรับรอบนี้เป็น visual/readability pass
+- ตรวจผ่าน production build ทั้ง client และ server สำเร็จ

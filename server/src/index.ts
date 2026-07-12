@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "landing-story-v3",
+    release: "runtime-map-art-v4",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );
