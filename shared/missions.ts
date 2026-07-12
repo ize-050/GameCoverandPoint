@@ -16,6 +16,7 @@ export const MISSION_POOL: MissionDef[] = [
   { id: "print-badge", roomId: "reception", title: "PRINT AN EXIT BADGE", description: "Authorize the escape route", propId: "reception-monitor" },
 ];
 
-export const MISSIONS_PER_ROUND = 3;
+export const MISSIONS_PER_ROUND = 4;
+export const ACTIVE_MISSIONS = 2;
 export const MISSION_SCORE = 30;
 export const ALL_MISSIONS_BONUS = 50;

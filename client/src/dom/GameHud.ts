@@ -19,7 +19,7 @@ const HELP_HTML = `
   <div style="margin-bottom:4px;">กด SPACE เพื่อซ่อนจนกว่าจะกดออกเอง จากนั้นจุดเดิม cooldown 12 วินาทีเฉพาะคุณ</div>
   <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
   <div style="margin-bottom:4px;">เดินผ่านกล่องของขวัญเพื่อสุ่มไอเท็ม และกด Q เพื่อใช้ (ถือได้ครั้งละ 1 ชิ้น)</div>
-  <div style="margin-bottom:4px;">ทำ Mission ครบ 3 จุดเพื่อปลดล็อก EXIT ที่ Reception แล้วไปกด SPACE เพื่อหนี</div>
+  <div style="margin-bottom:4px;">ทำ Mission 4 จุด (ขึ้นครั้งละ 2) เพื่อปลดล็อก EXIT ที่ Reception แล้วกด SPACE เพื่อหนี</div>
   <div style="margin-bottom:12px;">เข้าใกล้ของในห้องแล้วกด SPACE: กระดาน (หลอกคนหา) / เครื่องชงกาแฟ (วิ่งเร็วขึ้น) / จอมอนิเตอร์ (ดูตำแหน่งห้องของคนหา)</div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>สวิตช์ไฟ (ทุกคน)</b></div>
   <div style="margin-bottom:4px;">เข้าใกล้สวิตช์ข้างประตูแล้วกด SPACE เพื่อเปิด/ปิดไฟห้องนั้น</div>
@@ -206,11 +206,10 @@ export class GameHud {
     this.itemEl.style.background = styles[item] ?? "#0f172acc";
   }
 
-  setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean, exitUnlocked = false) {
+  setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean, exitUnlocked = false, totalDone = 0, missionGoal = missions.length) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
-    const done = missions.filter((mission) => completed.has(mission.id)).length;
-    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${done}/${missions.length}</div><div style="color:#94a3b8;margin-bottom:7px;">Go to ◆ and hold E for 3s.</div>` +
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${totalDone}/${missionGoal}</div><div style="color:#94a3b8;margin-bottom:7px;">2 active tasks · hold E for 3s.</div>` +
       missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("") +
       `<div style="margin-top:9px;padding-top:7px;border-top:1px solid #ffffff22;color:${exitUnlocked ? "#4ade80" : "#fca5a5"};font-weight:800;">${exitUnlocked ? "🚪 EXIT OPEN — ESCAPE AT RECEPTION" : "🔒 EXIT LOCKED"}</div>`;
   }

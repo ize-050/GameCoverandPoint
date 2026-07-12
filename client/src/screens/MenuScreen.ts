@@ -91,14 +91,14 @@ export class MenuScreen implements Screen {
           <div class="section-kicker">THE STORY</div>
           <div class="story-grid">
             <div><h2>THE LAST MEETING<br/>WAS A TRAP.</h2><p>It is 6:00 PM. Just as everyone prepares to leave, the building enters <b>Overtime Lockdown</b>. Doors seal. Lights fail. The office AI schedules one final meeting—with no end time.</p><p>You are part of the <b>Clock-Out Crew</b>: employees completing covert Office Missions to unlock the Reception exit and escape. But the company has activated <b>Office Patrol</b>, relentless seekers equipped with scans and trace terminals.</p></div>
-            <div class="story-card"><div class="story-time">18:00</div><div class="story-alert">⚠ OVERTIME LOCKDOWN</div><p>Three missions. One escape window. Trust your team—but never trust a filing cabinet.</p></div>
+            <div class="story-card"><div class="story-time">18:00</div><div class="story-alert">⚠ OVERTIME LOCKDOWN</div><p>Four missions, revealed two at a time. One escape window. Never trust a filing cabinet.</p></div>
           </div>
         </section>
 
         <section id="roles" class="landing-section roles-section">
           <div class="section-kicker">CHOOSE YOUR FATE</div><h2 class="center-title">TWO ROLES. ONE VERY LONG SHIFT.</h2>
           <div class="role-grid">
-            <article class="role-card hider-card"><div class="role-icon">🫣</div><div class="role-label">CLOCK-OUT CREW</div><h3>HIDER</h3><p>Hold E to complete three risky missions, unlock Reception's exit and clock out before Office Patrol catches you.</p><ul><li>◆ Mission markers & private minimap</li><li>🎁 Smoke, Decoy, Stun and Sprint</li><li>👁 Press C to check on teammates</li></ul></article>
+            <article class="role-card hider-card"><div class="role-icon">🫣</div><div class="role-label">CLOCK-OUT CREW</div><h3>HIDER</h3><p>Complete four risky missions—two active at a time—then unlock Reception's exit and clock out.</p><ul><li>◆ Mission markers & private minimap</li><li>🎁 Smoke, Decoy, Stun and Sprint</li><li>👁 Press C to check on teammates</li></ul></article>
             <article class="role-card seeker-card"><div class="role-icon">👁️</div><div class="role-label">OFFICE PATROL</div><h3>SEEKER</h3><p>Read the room, inspect suspicious cover and use tactical scans to catch every employee before the overtime timer expires.</p><ul><li>◉ F: short-range hidden-player scan</li><li>⌁ Trace Terminal: temporary reveal</li><li>🔍 Limited inspections—choose wisely</li></ul></article>
           </div>
         </section>
@@ -109,7 +109,7 @@ export class MenuScreen implements Screen {
             <article><b>01</b><span>CREATE A ROOM</span><p>Choose a character, create a room and share the four-character code.</p></article>
             <article><b>02</b><span>REVEAL YOUR ROLE</span><p>Each round randomly assigns the Clock-Out Crew and Office Patrol.</p></article>
             <article><b>03</b><span>WORK UNDER PRESSURE</span><p>Hiders hold E for 3 seconds at mission markers. Moving or releasing E cancels the task.</p></article>
-            <article><b>04</b><span>CLOCK OUT</span><p>Finish all three missions, unlock the Reception exit and escape. Patrol wins by catching the crew first.</p></article>
+            <article><b>04</b><span>CLOCK OUT</span><p>Finish all four missions, unlock the Reception exit and escape. Patrol wins by catching the crew first.</p></article>
           </div>
           <div class="controls-strip"><span><kbd>WASD</kbd> MOVE</span><span><kbd>SPACE</kbd> HIDE / INSPECT</span><span><kbd>E</kbd> MISSION</span><span><kbd>Q</kbd> GADGET</span><span><kbd>F</kbd> SCAN</span><span><kbd>1–4</kbd> EMOTE ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}</span></div>
         </section>

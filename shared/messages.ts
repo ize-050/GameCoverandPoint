@@ -68,6 +68,7 @@ export interface EmoteMessage {
 
 export interface StartGameMessage {
   seekerCount: number;
+  roundsPerMatch?: 3 | 5;
 }
 
 // client -> server (hider triggers a room-prop gimmick by proximity + SPACE —

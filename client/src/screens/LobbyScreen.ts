@@ -13,6 +13,7 @@ export class LobbyScreen implements Screen {
   private hostControlsEl?: HTMLDivElement;
   private waitingEl?: HTMLDivElement;
   private seekerSelect?: HTMLSelectElement;
+  private roundsSelect?: HTMLSelectElement;
   private startBtn?: HTMLButtonElement;
   private startHintEl?: HTMLDivElement;
   private readyBtn?: HTMLButtonElement;
@@ -40,6 +41,7 @@ export class LobbyScreen implements Screen {
           <div id="hostControls" style="display:none;flex-direction:column;gap:10px;text-align:left;">
             <div class="hns-label">จำนวนคนหา (Seeker)</div>
             <select id="seekerCount" class="hns-input"></select>
+            <div class="hns-label">MATCH LENGTH</div><select id="roundsCount" class="hns-input"><option value="3">3 ROUNDS</option><option value="5">5 ROUNDS</option></select>
             <div style="display:flex;gap:8px;"><button id="addBotBtn" class="hns-btn hns-btn-secondary" style="flex:1;">+ ADD BOT</button><button id="removeBotBtn" class="hns-btn hns-btn-ghost" style="flex:1;">− BOT</button></div>
             <button id="startBtn" class="hns-btn hns-btn-primary">${icon("play", { size: 15 })} เริ่มเกม</button>
             <div id="startHint" style="color:#fbbf24;font-size:12px;text-align:center;min-height:16px;"></div>
@@ -57,12 +59,13 @@ export class LobbyScreen implements Screen {
     this.hostControlsEl = this.overlay.querySelector("#hostControls") as HTMLDivElement;
     this.waitingEl = this.overlay.querySelector("#waiting") as HTMLDivElement;
     this.seekerSelect = this.overlay.querySelector("#seekerCount") as HTMLSelectElement;
+    this.roundsSelect = this.overlay.querySelector("#roundsCount") as HTMLSelectElement;
     this.startBtn = this.overlay.querySelector("#startBtn") as HTMLButtonElement;
     this.startHintEl = this.overlay.querySelector("#startHint") as HTMLDivElement;
     this.readyBtn = this.overlay.querySelector("#readyBtn") as HTMLButtonElement;
 
     this.startBtn.addEventListener("click", () => {
-      this.room!.send("startGame", { seekerCount: Number(this.seekerSelect!.value) });
+      this.room!.send("startGame", { seekerCount: Number(this.seekerSelect!.value), roundsPerMatch: Number(this.roundsSelect!.value) });
     });
     this.readyBtn.addEventListener("click", () => this.room!.send("toggleReady"));
     (this.overlay.querySelector("#addBotBtn") as HTMLButtonElement).addEventListener("click", () => this.room!.send("addBot"));
@@ -114,10 +117,11 @@ export class LobbyScreen implements Screen {
     const me = this.room.state.players.get(this.room.sessionId);
 
     const isHost = !!me?.isHost;
-    this.listEl.innerHTML = `${players.length}/${GAME_CONFIG.MAX_PLAYERS} joined<br/><br/>` + players.map((p) =>
+    const summary = this.room.state.matchComplete ? `<div style="color:#facc15;font-weight:900;margin-bottom:10px;">MATCH COMPLETE · FINAL SCORE</div>` : "";
+    this.listEl.innerHTML = summary + `${players.length}/${GAME_CONFIG.MAX_PLAYERS} joined<br/><br/>` + players.map((p) =>
       `<div style="display:flex;align-items:center;gap:7px;margin:5px 0;">
         <span style="flex:1;">${p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : p.isBot ? "🤖" : "•"} ${escapeHtml(p.nickname)}</span>
-        <b style="font-size:11px;color:${p.isReady ? "#4ade80" : "#94a3b8"};">${p.isBot ? "BOT" : p.isHost ? "HOST" : p.isReady ? "READY" : "WAITING"}</b>
+        <b style="font-size:11px;color:${p.isReady ? "#4ade80" : "#94a3b8"};">${this.room!.state.matchComplete ? `${p.score} PTS` : p.isBot ? "BOT" : p.isHost ? "HOST" : p.isReady ? "READY" : "WAITING"}</b>
         ${isHost && !p.isHost ? `<button data-kick="${p.id}" class="hns-btn hns-btn-ghost" style="padding:3px 7px;font-size:10px;">KICK</button>` : ""}
       </div>`).join("");
 

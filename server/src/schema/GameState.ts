@@ -6,6 +6,9 @@ export class GameState extends Schema {
   @type("string") phase: string = "lobby"; // lobby|role_reveal|hide|seek|result
   @type("number") timeRemaining: number = 0;
   @type("number") round: number = 0;
+  @type("number") matchRound: number = 0;
+  @type("number") roundsPerMatch: number = 3;
+  @type("boolean") matchComplete: boolean = false;
   @type("number") seekerCount: number = 1;
   @type("string") roomCode: string = "";
   // Recurring window during "seek" where hiders are encouraged to relocate
@@ -13,6 +16,8 @@ export class GameState extends Schema {
   // flag, same pattern as `phase`, no separate message needed.
   @type("boolean") relocateActive: boolean = false;
   @type("boolean") exitUnlocked: boolean = false;
+  @type("number") missionsCompleted: number = 0;
+  @type("number") missionGoal: number = 4;
   // Universal light-switch mechanic: presence of a room id key (value
   // `true`) means that room is currently dark. Any player can toggle any
   // room via its switch prop, capped at GAME_CONFIG.MAX_DARK_ROOMS at once.

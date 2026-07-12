@@ -18,6 +18,7 @@ export interface LocalMoveStatus {
   isDazed: boolean;
   isStunned: boolean;
   speedMultiplier: number;
+  cameraAzimuth: number;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -52,6 +53,7 @@ export class LocalPlayer3D {
       this.velocityX = 0;
       this.velocityZ = 0;
       this.character.playAnimation("idle");
+      this.character.setGait(status.role, status.isGhost, status.isDazed, false, 1);
       return;
     }
 
@@ -61,6 +63,13 @@ export class LocalPlayer3D {
     if (keyboard.isDown("KeyD") || keyboard.isDown("ArrowRight")) dx += 1;
     if (keyboard.isDown("KeyW") || keyboard.isDown("ArrowUp")) dz -= 1;
     if (keyboard.isDown("KeyS") || keyboard.isDown("ArrowDown")) dz += 1;
+
+    // Convert screen-relative input to world space at the fixed isometric
+    // camera angle: W always travels toward the top of the screen.
+    const inputX = dx;
+    const inputY = dz;
+    dx = inputY * Math.cos(status.cameraAzimuth) + inputX * Math.sin(status.cameraAzimuth);
+    dz = inputY * Math.sin(status.cameraAzimuth) - inputX * Math.cos(status.cameraAzimuth);
 
     let anim = "idle";
     const hasInput = dx !== 0 || dz !== 0;
@@ -78,6 +87,7 @@ export class LocalPlayer3D {
       const blend = 1 - Math.exp(-(deltaMs / 1000) / responseSec);
       this.velocityX = THREE.MathUtils.lerp(this.velocityX, targetVx, blend);
       this.velocityZ = THREE.MathUtils.lerp(this.velocityZ, targetVz, blend);
+      if (hasInput) this.character.setFacing(dx, dz);
       if (Math.hypot(this.velocityX, this.velocityZ) < 0.5) {
         this.velocityX = 0;
         this.velocityZ = 0;
@@ -98,8 +108,8 @@ export class LocalPlayer3D {
       this.character.position.z = resolved.y;
       if (Math.hypot(this.velocityX, this.velocityZ) > 1) {
         anim = status.speedBoosted ? "sprint" : "walk";
-        this.character.setFacing(this.velocityX, this.velocityZ);
       }
+      this.character.setGait(status.role, status.isGhost, status.isDazed, hasInput, speed / baseSpeed);
     }
     this.character.playAnimation(anim);
 

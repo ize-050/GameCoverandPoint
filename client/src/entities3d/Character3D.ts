@@ -45,6 +45,8 @@ export class Character3D {
   private nameSprite: THREE.Sprite;
   private nickname: string;
   private nameColor = "#ffffff";
+  private gaitTime = 0;
+  private gait = { role: "", ghost: false, dazed: false, moving: false, speed: 1 };
 
   constructor(appearance: CharacterAppearance, nickname: string) {
     this.nickname = nickname;
@@ -118,6 +120,11 @@ export class Character3D {
     this.currentAction = next;
   }
 
+  setGait(role: string, ghost: boolean, dazed: boolean, moving: boolean, speed = 1) {
+    this.gait = { role, ghost, dazed, moving, speed };
+    if (this.currentAction) this.currentAction.timeScale = ghost ? 0.75 : dazed ? 0.65 : role === "seeker" ? 1.16 * speed : 0.92 * speed;
+  }
+
   // A brief, uninterruptible gag animation (e.g. the toilet-use gimmick's
   // "sit") — bypasses the one-shot lock itself, then the lock expires
   // naturally and the next routine playAnimation() call (idle/walk from the
@@ -147,6 +154,11 @@ export class Character3D {
 
   update(deltaSeconds: number) {
     this.mixer?.update(deltaSeconds);
+    this.gaitTime += deltaSeconds;
+    const bobRate = this.gait.role === "seeker" ? 9 : 7;
+    this.modelRoot.position.y = this.gait.ghost ? 5 + Math.sin(this.gaitTime * 3) * 3 : this.gait.moving ? Math.abs(Math.sin(this.gaitTime * bobRate)) * (this.gait.role === "seeker" ? 2.2 : 1.2) : 0;
+    this.modelRoot.rotation.z = this.gait.dazed ? Math.sin(this.gaitTime * 5) * 0.12 : 0;
+    this.modelRoot.rotation.x = this.gait.moving && this.gait.role === "seeker" ? -0.08 : this.gait.moving ? 0.035 : 0;
     if (this.hasFacing) {
       const diff = Math.atan2(Math.sin(this.targetFacing - this.group.rotation.y), Math.cos(this.targetFacing - this.group.rotation.y));
       this.group.rotation.y += diff * (1 - Math.exp(-FACING_DAMPING * deltaSeconds));

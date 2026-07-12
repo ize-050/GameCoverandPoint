@@ -4,6 +4,9 @@
 // oscillator-synthesized beep() placeholders with actual recorded sound design.
 
 let ctx: AudioContext | null = null;
+let muted = false;
+export function setSfxMuted(value: boolean) { muted = value; }
+export function isSfxMuted() { return muted; }
 
 // Shared across SFX and the background music player — browsers cap the
 // number of live AudioContexts, and reusing one keeps the same user-gesture
@@ -41,6 +44,7 @@ function loadBuffer(path: string): Promise<AudioBuffer> {
 }
 
 function play(path: string, { gain = 0.6, delay = 0 }: { gain?: number; delay?: number } = {}) {
+  if (muted) return;
   const audioCtx = getAudioContext();
   if (!audioCtx) return;
   loadBuffer(path)

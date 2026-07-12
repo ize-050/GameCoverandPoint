@@ -42,13 +42,7 @@ export class ResultScreen implements Screen {
       })
       .join("");
 
-    const me = this.room.state.players.get(this.room.sessionId);
-    const actionHtml = me?.isHost
-      ? `<button id="nextBtn" class="hns-btn hns-btn-primary" style="width:100%;margin-top:6px;">${icon("play", { size: 15 })} เล่นรอบต่อไป</button>`
-      : `<div style="text-align:center;color:#94a3b8;font-size:13px;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;">${icon(
-          "hourglass",
-          { size: 13 }
-        )} รอ host เริ่มรอบต่อไป...</div>`;
+    const actionHtml = `<div style="text-align:center;color:#94a3b8;font-size:13px;margin-top:10px;">${icon("hourglass", { size: 13 })} ROUND ${this.room.state.matchRound}/${this.room.state.roundsPerMatch} · พัก ${this.room.state.timeRemaining}s</div>`;
 
     this.overlay = createOverlay();
     this.overlay.innerHTML = `
@@ -67,12 +61,6 @@ export class ResultScreen implements Screen {
         </div>
       </div>
     `;
-
-    if (me?.isHost) {
-      (this.overlay.querySelector("#nextBtn") as HTMLButtonElement).addEventListener("click", () => {
-        this.room!.send("nextRound");
-      });
-    }
 
     this.room.onStateChange(this.stateChangeHandler);
 

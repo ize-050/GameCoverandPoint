@@ -9,6 +9,7 @@ import { ResultScreen } from "./screens/ResultScreen";
 import { NetworkManager } from "./network/NetworkManager";
 import { loadReconnectToken, clearReconnectToken } from "./network/reconnect";
 import { musicPlayer } from "./audio/music";
+import { setSfxMuted } from "./audio/sfx";
 import { icon } from "./dom/icons";
 import { preloadCharacterModels } from "./loaders/characterModels";
 import { preloadFurnitureModels } from "./loaders/furnitureModels";
@@ -54,14 +55,23 @@ function unlockMusic() {
 window.addEventListener("pointerdown", unlockMusic);
 window.addEventListener("keydown", unlockMusic);
 
+const AUDIO_MUTED_KEY = "clockout_audio_muted";
+const initialMuted = localStorage.getItem(AUDIO_MUTED_KEY) === "1";
+musicPlayer.setMuted(initialMuted);
+setSfxMuted(initialMuted);
 const muteBtn = document.createElement("button");
-muteBtn.innerHTML = icon("speaker-on", { size: 18 });
+const renderMuteButton = (muted: boolean) => {
+  muteBtn.innerHTML = `${icon(muted ? "speaker-off" : "speaker-on", { size: 18 })}<span>${muted ? "SOUND OFF" : "SOUND ON"}</span>`;
+};
+renderMuteButton(initialMuted);
 muteBtn.style.cssText =
-  "position:fixed;bottom:24px;left:24px;z-index:8;font-size:20px;background:#0a0f1cbb;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;display:flex;align-items:center;";
+  "position:fixed;bottom:24px;left:24px;z-index:999;font-size:12px;font-weight:800;background:#0a0f1cdd;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;";
 muteBtn.addEventListener("click", () => {
   const muted = !musicPlayer.isMuted();
   musicPlayer.setMuted(muted);
-  muteBtn.innerHTML = icon(muted ? "speaker-off" : "speaker-on", { size: 18 });
+  setSfxMuted(muted);
+  localStorage.setItem(AUDIO_MUTED_KEY, muted ? "1" : "0");
+  renderMuteButton(muted);
 });
 document.body.appendChild(muteBtn);
 

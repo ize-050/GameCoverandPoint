@@ -378,3 +378,16 @@ git status
 - ลบ countdown และข้อความ `ออกอัตโนมัติ` ออกจาก interaction hint และ Help panel
 - Bot ยังมี hide cycle 8 วินาทีเพื่อให้ solo match เดินต่อและไม่เกิด Bot ซ่อนถาวร
 - ตรวจ client/server production build ผ่าน
+
+## Match Series, Mission Waves, Movement และ Spectator Polish
+
+- เพิ่ม Match Length ให้ Host เลือก 3 หรือ 5 รอบ; คะแนนสะสมตลอด Match และรีเซ็ตเมื่อเริ่ม Match ใหม่
+- หลังแต่ละรอบพักหน้า Result ตาม `RESULT_SEC` แล้ว server เริ่มรอบถัดไปอัตโนมัติ ผู้เล่น/Host ข้ามช่วงพักไม่ได้
+- เมื่อครบ Match กลับ Lobby พร้อม `MATCH COMPLETE · FINAL SCORE` และคะแนนรวมของทุกคน
+- Quest ไม่ถูกเปิดระหว่าง Role Reveal/HIDE; เริ่มสุ่มเมื่อเข้า SEEK เท่านั้น
+- เปลี่ยนเป็น 4 Mission ต่อรอบ โดย active และแสดงบน HUD/minimap ครั้งละ 2 จุด เมื่อทำสำเร็จจึงเติมงานถัดไป
+- ปรับ WASD เป็น screen-relative movement: W/S/A/D ตรงกับบน/ล่าง/ซ้าย/ขวาบนหน้าจอ isometric และตัวละครหันทิศ input ทันทีโดยความเร็วยัง smooth
+- เพิ่ม gait identity: Seeker ก้าวหนัก/เร็วและเอนตัว, Hider ก้าวสั้น, Ghost ลอย, Dazed เดินเซ และ animation speed ตอบสนอง Sprint
+- เมื่อ Hider ถูกจับหรือ Escape กล้องเปลี่ยนไปผู้รอดอัตโนมัติ; กด C สลับผู้รอดและย้ายเป้าหมายเองเมื่อคนที่ดูถูกจับ
+- ปรับปุ่มเสียงให้เห็นชัดและอยู่เหนือหน้า Landing; ปิดทั้ง Music/SFX และจำสถานะด้วย localStorage
+- ตรวจ build client/server ผ่าน และทดสอบ server flow จริงยืนยัน SEEK มี `missionGoal=4`, `activeCount=2`, `matchRound=1/3`

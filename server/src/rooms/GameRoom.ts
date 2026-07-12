@@ -29,7 +29,7 @@ import {
   type UsePropMessage,
   type ItemKind,
 } from "../../../shared/messages.js";
-import { MISSION_POOL, MISSIONS_PER_ROUND, MISSION_SCORE, ALL_MISSIONS_BONUS } from "../../../shared/missions.js";
+import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS } from "../../../shared/missions.js";
 
 // Looks identical to a real cover point client-side, but can never actually
 // hide anyone — computed once from the shared map data rather than kept in
@@ -84,6 +84,7 @@ export class GameRoom extends Room<GameState> {
   private survivalMilestones = new Set<number>();
   private missionCooldownUntil = new Map<string, number>();
   private missionStartedAt = new Map<string, { missionId: string; startedAt: number }>();
+  private missionQueue: typeof MISSION_POOL = [];
   private scanCooldownUntil = new Map<string, number>();
   private traceCooldownUntil = new Map<string, number>();
   private roundDecoyCoverPointIds = new Set<string>();
@@ -119,7 +120,6 @@ export class GameRoom extends Room<GameState> {
 
     this.onMessage("move", (client, message: MoveMessage) => this.handleMove(client, message));
     this.onMessage("startGame", (client, message: StartGameMessage) => this.handleStartGame(client, message));
-    this.onMessage("nextRound", (client) => this.handleNextRound(client));
     this.onMessage("hide", (client, message: CoverPointMessage) => this.handleHide(client, message));
     this.onMessage("unhide", (client) => this.handleUnhide(client));
     this.onMessage("inspect", (client, message: CoverPointMessage) => this.handleInspect(client, message));
@@ -168,7 +168,16 @@ export class GameRoom extends Room<GameState> {
     if (this.state.phase === "role_reveal") this.beginHidePhase();
     else if (this.state.phase === "hide") this.beginSeekPhase();
     else if (this.state.phase === "seek") this.endRound();
-    else if (this.state.phase === "result") this.beginLobby();
+    else if (this.state.phase === "result") {
+      if (this.state.matchRound < this.state.roundsPerMatch) {
+        this.state.matchRound += 1;
+        this.state.round += 1;
+        this.beginRound();
+      } else {
+        this.state.matchComplete = true;
+        this.beginLobby();
+      }
+    }
   }
 
   // Recurring "come out and relocate" window during the seek phase, computed
@@ -445,18 +454,13 @@ export class GameRoom extends Room<GameState> {
     if (unreadyHuman) return;
 
     this.state.seekerCount = this.clampSeekerCount(message?.seekerCount);
+    this.state.roundsPerMatch = message?.roundsPerMatch === 5 ? 5 : 3;
+    this.state.matchRound = 1;
+    this.state.matchComplete = false;
+    this.state.players.forEach((candidate) => (candidate.score = 0));
     this.state.round += 1;
     this.beginRound();
     this.updateListing();
-  }
-
-  private handleNextRound(client: Client) {
-    if (this.state.phase !== "result") return;
-    const player = this.state.players.get(client.sessionId);
-    if (!player?.isHost) return;
-
-    this.state.round += 1;
-    this.beginRound();
   }
 
   private maxSeekersFor(playerCount: number): number {
@@ -532,7 +536,9 @@ export class GameRoom extends Room<GameState> {
     this.state.darkRooms.clear();
     this.state.collectedSmokeItems.clear();
     this.state.missions.clear();
-    shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND).forEach((mission) => this.state.missions.set(mission.id, false));
+    this.missionQueue = shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND);
+    this.state.missionsCompleted = 0;
+    this.state.missionGoal = MISSIONS_PER_ROUND;
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
     this.updateListing();
@@ -563,6 +569,14 @@ export class GameRoom extends Room<GameState> {
   private beginSeekPhase() {
     this.state.phase = "seek";
     this.state.timeRemaining = GAME_CONFIG.SEEK_PHASE_SEC;
+    this.activateNextMissions();
+  }
+
+  private activateNextMissions() {
+    while (this.state.missions.size < ACTIVE_MISSIONS && this.missionQueue.length > 0) {
+      const mission = this.missionQueue.shift()!;
+      this.state.missions.set(mission.id, false);
+    }
   }
 
   private endRound() {
@@ -714,11 +728,13 @@ export class GameRoom extends Room<GameState> {
     if (!mission || !prop || Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
 
     this.missionCooldownUntil.set(client.sessionId, now + GAME_CONFIG.MISSION_COOLDOWN_MS);
-    this.state.missions.set(mission.id, true);
+    this.state.missions.delete(mission.id);
+    this.state.missionsCompleted += 1;
     player.score += MISSION_SCORE;
     this.broadcast("missionComplete", { missionId: mission.id, title: mission.title, nickname: player.nickname, points: MISSION_SCORE });
 
-    if ([...this.state.missions.values()].every(Boolean)) {
+    this.activateNextMissions();
+    if (this.state.missionsCompleted >= this.state.missionGoal) {
       this.state.players.forEach((candidate) => {
         if (candidate.role === "hider" && !candidate.isCaught) candidate.score += ALL_MISSIONS_BONUS;
       });

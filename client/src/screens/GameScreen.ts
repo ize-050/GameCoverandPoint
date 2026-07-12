@@ -354,8 +354,11 @@ export class GameScreen implements Screen {
         isDazed: this.myPlayer.isDazed,
         isStunned: this.myPlayer.isStunned,
         speedMultiplier: this.myPlayer.speedMultiplier,
+        cameraAzimuth: this.cameraAzimuth,
       });
-      const cameraRemote = performance.now() < this.teammateCameraUntil ? this.remotePlayers.get(this.cameraTargetPlayerId) : undefined;
+      if (isGhost) this.ensureSpectatorCamera();
+      if (isGhost && keyboard.justDown("KeyC")) this.cycleTeammateCamera(true);
+      const cameraRemote = (isGhost || performance.now() < this.teammateCameraUntil) ? this.remotePlayers.get(this.cameraTargetPlayerId) : undefined;
       this.desiredFollowTarget.copy(cameraRemote?.character.position ?? this.localPlayer.character.position);
       // Keep the orthographic frustum inside the playable floor. Without
       // this, players near an outside wall see a large black void.
@@ -488,7 +491,7 @@ export class GameScreen implements Screen {
       const traceRemainingSec = Math.ceil(Math.max(0, this.traceCooldownUntil - performance.now()) / 1000);
       this.hud.setSeekerMission(true, traceRemainingSec);
     } else {
-      this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions, this.room.state.exitUnlocked);
+      this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions, this.room.state.exitUnlocked, this.room.state.missionsCompleted, this.room.state.missionGoal);
     }
     const scanRemainingSec = this.myPlayer?.role === "seeker" ? Math.ceil(Math.max(0, this.scanCooldownUntil - performance.now()) / 1000) : 0;
     this.hud.setScanCooldown(scanRemainingSec);
@@ -548,6 +551,7 @@ export class GameScreen implements Screen {
         remote.setAppearance(appearanceOf(player));
         remote.character.setNameColor(nameColorFor(player));
         remote.playAnimation(player.isCaught ? "die" : player.anim);
+        remote.character.setGait(player.role, player.isCaught, player.isDazed, player.anim === "walk" || player.anim === "sprint", player.anim === "sprint" ? 1.35 : 1);
         this.updateRemoteVisibility(remote, player);
         this.checkHideGimmick(sessionId, player);
       });
@@ -1356,20 +1360,30 @@ export class GameScreen implements Screen {
     }
   }
 
-  private cycleTeammateCamera() {
+  private ensureSpectatorCamera() {
+    if (!this.room) return;
+    const target = this.room.state.players.get(this.cameraTargetPlayerId);
+    if (target && !target.isCaught && !target.isEscaped && this.remotePlayers.has(target.id)) return;
+    const hasSurvivor = [...this.room.state.players.entries()].some(([id, player]) => id !== this.room!.sessionId && player.role === "hider" && !player.isCaught && !player.isEscaped && this.remotePlayers.has(id));
+    if (!hasSurvivor && this.cameraTargetPlayerId === "__none__") return;
+    this.cycleTeammateCamera(true);
+  }
+
+  private cycleTeammateCamera(spectator = false) {
     if (!this.room || this.myPlayer?.role !== "hider") return;
     const ids = [...this.room.state.players.entries()]
-      .filter(([id, player]) => id !== this.room!.sessionId && player.role === "hider" && !player.isCaught && this.remotePlayers.has(id))
+      .filter(([id, player]) => id !== this.room!.sessionId && player.role === "hider" && !player.isCaught && !player.isEscaped && this.remotePlayers.has(id))
       .map(([id]) => id);
     if (ids.length === 0) {
+      this.cameraTargetPlayerId = "__none__";
       this.hud?.showFeedback("👥 No active Hider teammates to view");
       return;
     }
     this.teammateCameraCursor = (this.teammateCameraCursor + 1) % ids.length;
     this.cameraTargetPlayerId = ids[this.teammateCameraCursor];
-    this.teammateCameraUntil = performance.now() + 4000;
+    this.teammateCameraUntil = spectator ? Number.POSITIVE_INFINITY : performance.now() + 4000;
     const teammate = this.room.state.players.get(this.cameraTargetPlayerId);
-    this.hud?.showFeedback(`👁 CAMERA: ${escapeHtml(teammate?.nickname ?? "teammate")} · 4s`);
+    this.hud?.showFeedback(`👁 ${spectator ? "SPECTATING" : "CAMERA"}: ${escapeHtml(teammate?.nickname ?? "teammate")}${spectator ? " · C to switch" : " · 4s"}`);
   }
 
   private buildWayfinding() {
