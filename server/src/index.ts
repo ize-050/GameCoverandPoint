@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "urgent-music-v2",
+    release: "landing-story-v3",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

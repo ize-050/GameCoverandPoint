@@ -5,7 +5,7 @@ import { createOverlay, removeOverlay } from "../dom/overlay";
 import { NetworkManager, JoinError } from "../network/NetworkManager";
 import { Character3D } from "../entities3d/Character3D";
 import { DEFAULT_APPEARANCE, CHARACTER_VARIANTS, type CharacterAppearance } from "../../../shared/messages";
-import { icon, EMOTE_ICON_NAMES } from "../dom/icons";
+import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
 import { playUiClickSfx } from "../audio/sfx";
 
 const NICKNAME_KEY = "hns_nickname";
@@ -43,6 +43,11 @@ export class MenuScreen implements Screen {
 
   mount() {
     this.overlay = createOverlay();
+    this.overlay.className = "hns-landing";
+    this.overlay.style.display = "block";
+    this.overlay.style.overflowY = "auto";
+    this.overlay.style.overflowX = "hidden";
+    this.overlay.style.background = "#070b14";
     this.overlay.innerHTML = this.template();
     this.wire();
     this.buildPreview();
@@ -65,53 +70,62 @@ export class MenuScreen implements Screen {
   private template(): string {
     const savedNickname = localStorage.getItem(NICKNAME_KEY) ?? "";
     return `
-      <div style="display:flex;gap:28px;align-items:flex-start;">
-        <div style="display:flex;flex-direction:column;gap:14px;">
-          <div style="text-align:center;">
-            <div class="hns-title" style="font-size:34px;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;">${icon(
-              "hider",
-              { size: 30, color: "#fbbf24" }
-            )} Hide &amp; Seek Online</div>
-            <div style="color:var(--text-dim);font-size:14px;margin-top:4px;">เกมซ่อนหาออนไลน์ สำหรับกิจกรรมทีม</div>
+      <nav class="landing-nav">
+        <a href="#top" class="landing-brand">${icon("hider", { size: 25, color: "#fbbf24" })}<span>CLOCK OUT<br/><small>PROTOCOL</small></span></a>
+        <div class="landing-links"><a href="#story">Story</a><a href="#how">How to Play</a><a href="#roles">Roles</a><a href="#play" class="nav-cta">Play Now</a></div>
+      </nav>
+
+      <main id="top">
+        <section class="landing-hero">
+          <div class="hero-art" aria-hidden="true"></div>
+          <div class="hero-content">
+            <div class="eyebrow">ONLINE OFFICE PARTY GAME · 1–10 PLAYERS</div>
+            <h1>ESCAPE THE<br/><span>OVERTIME.</span></h1>
+            <p>The office AI has locked the doors. Complete secret missions, deploy ridiculous gadgets, hide from Office Patrol—and clock out before time runs out.</p>
+            <div class="hero-actions"><a href="#play" class="hero-primary">PLAY IN BROWSER</a><a href="#story" class="hero-secondary">DISCOVER THE STORY ↓</a></div>
+            <div class="hero-chips"><span>⚡ No install</span><span>👥 Team building</span><span>🎁 Random gadgets</span></div>
           </div>
+        </section>
 
-          <div class="hns-panel" style="display:flex;flex-direction:column;gap:14px;width:320px;color:#fff;">
-            <input id="nickname" class="hns-input" maxlength="12" placeholder="ชื่อเล่น (สูงสุด 12 ตัว)" value="${savedNickname}" />
+        <section id="story" class="landing-section story-section">
+          <div class="section-kicker">THE STORY</div>
+          <div class="story-grid">
+            <div><h2>THE LAST MEETING<br/>WAS A TRAP.</h2><p>It is 6:00 PM. Just as everyone prepares to leave, the building enters <b>Overtime Lockdown</b>. Doors seal. Lights fail. The office AI schedules one final meeting—with no end time.</p><p>You are part of the <b>Clock-Out Crew</b>: employees completing covert Office Missions to shorten the shift and escape. But the company has activated <b>Office Patrol</b>, relentless seekers equipped with scans and trace terminals.</p></div>
+            <div class="story-card"><div class="story-time">18:00</div><div class="story-alert">⚠ OVERTIME LOCKDOWN</div><p>Three missions. One escape window. Trust your team—but never trust a filing cabinet.</p></div>
+          </div>
+        </section>
 
-            <div>
-              <div class="hns-label" style="margin-bottom:6px;">ตัวละคร</div>
-              <div style="display:flex;gap:10px;align-items:center;">
-                <button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button>
-                <span id="variantLabel" style="flex:1;text-align:center;font-size:14px;">แบบที่ 1</span>
-                <button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button>
-              </div>
-            </div>
+        <section id="roles" class="landing-section roles-section">
+          <div class="section-kicker">CHOOSE YOUR FATE</div><h2 class="center-title">TWO ROLES. ONE VERY LONG SHIFT.</h2>
+          <div class="role-grid">
+            <article class="role-card hider-card"><div class="role-icon">🫣</div><div class="role-label">CLOCK-OUT CREW</div><h3>HIDER</h3><p>Complete three hidden missions, relocate between cover points, collect mystery gadgets and survive until the clock reaches zero.</p><ul><li>◆ Mission markers & private minimap</li><li>🎁 Smoke, Decoy, Stun and Sprint</li><li>👁 Press C to check on teammates</li></ul></article>
+            <article class="role-card seeker-card"><div class="role-icon">👁️</div><div class="role-label">OFFICE PATROL</div><h3>SEEKER</h3><p>Read the room, inspect suspicious cover and use tactical scans to catch every employee before the overtime timer expires.</p><ul><li>◉ F: short-range hidden-player scan</li><li>⌁ Trace Terminal: temporary reveal</li><li>🔍 Limited inspections—choose wisely</li></ul></article>
+          </div>
+        </section>
 
-            <div style="height:1px;background:rgba(255,255,255,0.08);margin:4px 0;"></div>
+        <section id="how" class="landing-section how-section">
+          <div class="section-kicker">HOW TO PLAY</div><h2 class="center-title">YOUR FIRST SHIFT IN 4 STEPS</h2>
+          <div class="steps-grid">
+            <article><b>01</b><span>CREATE A ROOM</span><p>Choose a character, create a room and share the four-character code.</p></article>
+            <article><b>02</b><span>REVEAL YOUR ROLE</span><p>Each round randomly assigns the Clock-Out Crew and Office Patrol.</p></article>
+            <article><b>03</b><span>HIDE OR HUNT</span><p>Use SPACE to hide, inspect and interact. Hiders press E at mission markers.</p></article>
+            <article><b>04</b><span>BEAT THE CLOCK</span><p>Survive, finish missions or catch the whole crew before the urgent final countdown.</p></article>
+          </div>
+          <div class="controls-strip"><span><kbd>WASD</kbd> MOVE</span><span><kbd>SPACE</kbd> HIDE / INSPECT</span><span><kbd>E</kbd> MISSION</span><span><kbd>Q</kbd> GADGET</span><span><kbd>F</kbd> SCAN</span><span><kbd>1–4</kbd> EMOTE ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}</span></div>
+        </section>
 
-            <button id="createBtn" class="hns-btn hns-btn-primary">${icon("door", { size: 16 })} สร้างห้อง</button>
-            <div style="display:flex;gap:8px;">
-              <input id="code" class="hns-input" maxlength="4" placeholder="รหัสห้อง" style="flex:1;width:0;text-transform:uppercase;letter-spacing:0.15em;text-align:center;" />
-              <button id="joinBtn" class="hns-btn hns-btn-secondary" style="white-space:nowrap;">${icon("key", { size: 16 })} เข้าร่วม</button>
-            </div>
+        <section id="play" class="landing-section play-section">
+          <div class="play-copy"><div class="section-kicker">READY TO CLOCK OUT?</div><h2>START YOUR<br/>ESCAPE PLAN.</h2><p>No download. Create a private room and invite your team instantly.</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
+          <div class="hns-panel play-panel">
+            <div class="hns-label">YOUR NICKNAME</div><input id="nickname" class="hns-input" maxlength="12" placeholder="Nickname (max 12 characters)" value="${escapeHtml(savedNickname)}" />
+            <div class="hns-label">CHOOSE YOUR EMPLOYEE</div><div class="variant-row"><button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button><span id="variantLabel">Employee 1</span><button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button></div>
+            <button id="createBtn" class="hns-btn hns-btn-primary">${icon("door", { size: 16 })} CREATE PRIVATE ROOM</button>
+            <div class="join-divider"><span>OR JOIN A TEAM</span></div><div class="join-row"><input id="code" class="hns-input" maxlength="4" placeholder="ROOM CODE" /><button id="joinBtn" class="hns-btn hns-btn-secondary">${icon("key", { size: 16 })} JOIN</button></div>
             <div id="error" class="hns-error"></div>
           </div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:10px;align-items:center;">
-          <div class="hns-label">ตัวละครของคุณ</div>
-          <div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:18px;overflow:hidden;
-                      background:#0f1729e6;border:2px solid rgba(34,211,238,0.45);"></div>
-          <div class="hns-panel" style="width:220px;font-size:12.5px;line-height:1.65;color:#cbd5e1;">
-            <div class="hns-label" style="margin-bottom:8px;">${icon("play", { size: 14 })} วิธีเล่น</div>
-            ${icon("keyboard", { size: 14 })} WASD / ลูกศร — เดิน<br/>
-            ␣ SPACE — ซ่อน / ตรวจจุดซ่อน<br/>
-            1-4 — ส่งอีโมจิ ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}<br/><br/>
-            ${icon("hider", { size: 15, color: "#fbbf24" })} <b style="color:#f1f5f9;">คนซ่อน</b>: กด SPACE ที่จุดซ่อน<br/>คนหาจะไม่เห็นตำแหน่งคุณเลย<br/><br/>
-            ${icon("seeker", { size: 15, color: "#22d3ee" })} <b style="color:#f1f5f9;">คนหา</b>: เข้าใกล้จุดซ่อนแล้วกด SPACE<br/>มีคนซ่อน = จับได้ทันที
-          </div>
-        </div>
-      </div>
+        </section>
+      </main>
+      <footer>Clock Out Protocol · Browser Multiplayer Prototype · Built for teams that deserve to go home.</footer>
     `;
   }
 
@@ -159,7 +173,7 @@ export class MenuScreen implements Screen {
     let variantIndex = Math.max(0, CHARACTER_VARIANTS.indexOf(this.appearance.variant));
     const applyVariant = () => {
       this.appearance.variant = CHARACTER_VARIANTS[variantIndex];
-      variantLabelEl.textContent = `แบบที่ ${variantIndex + 1}`;
+      variantLabelEl.textContent = `Employee ${variantIndex + 1}`;
       this.previewCharacter?.setAppearance(this.appearance);
       persistAppearance();
     };
@@ -208,7 +222,7 @@ export class MenuScreen implements Screen {
       showError("");
       const code = codeInput.value.trim();
       if (code.length !== 4) {
-        showError("กรุณากรอกรหัสห้อง 4 ตัวอักษร");
+        showError("Enter a 4-character room code");
         return;
       }
       joinBtn.disabled = true;
@@ -224,11 +238,11 @@ export class MenuScreen implements Screen {
 
   private describeError(err: unknown): string {
     if (err instanceof JoinError) {
-      if (err.reason === "ROOM_FULL") return "ห้องเต็ม (10 คน)";
-      if (err.reason === "GAME_ALREADY_STARTED") return "เกมเริ่มไปแล้ว";
-      return "ไม่พบห้อง";
+      if (err.reason === "ROOM_FULL") return "This room is full (10 players)";
+      if (err.reason === "GAME_ALREADY_STARTED") return "This round has already started";
+      return "Room not found";
     }
     console.error(err);
-    return "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง";
+    return "Could not connect to the server. Try again.";
   }
 }

@@ -306,3 +306,14 @@ git status
 - เปลี่ยน arpeggio เป็น square wave เบาลงและเพิ่ม low heartbeat pulse สลับหนัก/เบา
 - เพิ่มความดังจาก 0.16 เป็น 0.19 ด้วย gain ramp 0.45 วินาที ไม่ตัดเพลงทันที
 - กลับเป็น calm/tense อัตโนมัติเมื่อเปลี่ยน phase หรือเริ่มรอบใหม่
+
+## Landing Page และ Story
+
+- ตั้งชื่อ presentation ใหม่เป็น `Clock Out Protocol — Escape the Overtime`
+- Story: เวลา 18:00 ระบบ Office AI เปิด Overtime Lockdown; Clock-Out Crew ต้องทำภารกิจและซ่อนจาก Office Patrol เพื่อกลับบ้าน
+- เปลี่ยน Menu จาก dialog กลางจอเป็น responsive landing page แบบเว็บไซต์
+- เพิ่ม sticky navigation: Story, How to Play, Roles และ Play Now
+- เพิ่ม hero, story, role comparison, four-step tutorial, control reference และ play/join form
+- รักษา character preview, create room และ join room flow เดิม
+- สร้าง key art แบบ voxel/isometric office โดยใช้ built-in image generation และเก็บไว้ที่ `client/public/images/office-escape-hero.png`
+- หน้าแรกและ error messages เปลี่ยนเป็นภาษาอังกฤษให้สอดคล้องกับชื่อห้องในเกม
