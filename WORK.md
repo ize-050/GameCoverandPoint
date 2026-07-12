@@ -5,9 +5,9 @@
 
 ## สถานะล่าสุด
 
-- วันที่อัปเดต: 11 กรกฎาคม 2026
+- วันที่อัปเดต: 12 กรกฎาคม 2026
 - Branch: `main`
-- Feature commit: `8558b9c` — `Implement balanced items and lock gameplay camera`
+- Feature commit ล่าสุด: `659ba6b` — `Show scan radius as a ground ring + add cooldown countdown to HUD`
 - Client: Vercel — https://game-coverand-point.vercel.app/
 - Server: Render — `wss://gamecoverandpoint.onrender.com`
 - Server health: `https://gamecoverandpoint.onrender.com/health`
@@ -241,3 +241,60 @@ git status
 - ตรวจตำแหน่ง Report Terminal ฝั่ง server แล้วไม่ชนกำแพง
 - เปลี่ยน dark-room overlay จาก transparent 3D box หกด้านเป็น plane เดียวเหนือห้อง
 - ลดปัญหา transparent sorting/z-fighting ที่ทำให้ไฟดูเหมือนกระพริบระหว่าง fade
+
+## Playtest Feedback Round — Minimap Leak, Seeker Abilities, Mission Cooldown
+
+หลัง demo กับ user รอบล่าสุด ได้ feedback 5 ข้อ + ตามมาอีก 2 ข้อย่อย แก้ครบทุกข้อแล้ว
+โดยไม่แตะระบบซ่อน/ตรวจ/จับเดิม
+
+### 1. Minimap รั่วเห็นคนหา
+
+- Hider เห็น minimap/map ปกติ แต่ก่อนหน้านี้เห็นตำแหน่ง Seeker ปนอยู่ด้วย ทั้งที่ไม่ควรเห็น
+- แก้โดยกรอง remote players ที่ role เป็น `seeker` ออกจาก minimap render เฉพาะตอนผู้ชมไม่ใช่ Ghost
+- Ghost (ผู้ถูกจับ/สเปกเตเตอร์) ยังเห็นทุกคนเหมือนเดิม ไม่กระทบ
+
+### 2. Seeker Scan Ability (F, cooldown 15 วิ)
+
+- Seeker กด `F` เพื่อสแกนหา Hider ที่กำลังซ่อนอยู่ในรัศมี 220px รอบตัว (คนที่ไม่ได้ซ่อนไม่นับ เพราะเห็นอยู่แล้วในโลก 3D)
+- เป็น one-shot private snapshot ส่งเฉพาะ client ที่ขอ ไม่ใช่ live tracking ต่อเนื่อง (กัน cheat)
+- แสดงผลเป็นเงาคนสีดำ (shadow silhouette) ยืนอยู่ตรงตำแหน่งจริงเป็นเวลา 3 วินาทีแล้วจางหาย
+- เพิ่มวงแหวนขยายรัศมี (ground ring) ที่ตำแหน่ง Seeker ตอนกด F: สีแดงถ้าเจอคนซ่อน สีฟ้าถ้าไม่เจอ ให้เห็นชัดว่าโซนที่สแกนครอบคลุมแค่ไหน
+- เพิ่ม HUD countdown "สแกนพร้อมใช้อีก N วิ" ระหว่างติด cooldown จะหายไปเองเมื่อพร้อมใช้ใหม่
+- เพิ่ม persistent hint `[F] สแกนหาคนซ่อนในรัศมี` ให้ Seeker เห็นตลอดเวลาที่ไม่มี prompt อื่นซ้อนอยู่
+
+### 3. ปรับสมดุลความเร็ว Seeker
+
+- เพิ่มความเร็ว Seeker จาก 216 เป็น 230 (Hider คงที่ 200) ให้รู้สึกว่า Seeker เร็วกว่าอย่างชัดเจนขึ้นแต่ไม่มากเกินไป
+
+### 4. Cooldown ระหว่างทำ Office Mission
+
+- เพิ่ม cooldown 12 วินาทีต่อผู้เล่นระหว่างทำภารกิจสำเร็จแต่ละอัน ป้องกันการรัวทำภารกิจติดกันทันที
+
+### 5. ภารกิจของ Seeker — Trace Terminal
+
+- เพิ่มจุด Trace Terminal ที่ Reception (เสาอำพัน/ทอง มีจอเรืองแสงและจานดาวเทียม แยกจาก Report Terminal สีฟ้าของ Hider)
+- Seeker เดินไปกด SPACE ที่จุดนี้ (cooldown 60 วิ) จะได้ตำแหน่งของ Hider ทุกคนที่ยังไม่ถูกจับ (รวมคนที่ไม่ได้ซ่อนด้วย) เป็นเวลา 10 วินาที
+- แสดงเป็นเงาคนสีดำที่ตำแหน่งจริงในโลก 3D เหมือน scan
+- Seeker ปกติไม่มี minimap เลย — ระหว่างหน้าต่าง 10 วินาทีนี้จะเปิด minimap ชั่วคราวให้ และ plot ตำแหน่งที่ตรวจพบเป็นวงแหวนสีแดงบน minimap ด้วย พอหมดเวลาจะปิด minimap กลับไปเหมือนเดิม
+- เพิ่ม `SEEKER MISSION` HUD panel มุมซ้ายบน (ใช้ช่องเดียวกับ `HIDER MISSIONS` เพราะสองบทบาทไม่เห็นพร้อมกัน) อธิบายทั้ง Trace Terminal และ Scan ability
+
+### ตามมา: ชื่อ Seeker เป็นสีแดง
+
+- เมื่อ Hider มองเห็น Seeker ตัวจริง (ไม่ได้ซ่อนอยู่) ชื่อผู้เล่นเหนือหัว Seeker จะเป็นสีแดงแทนสีขาว ให้สังเกตได้ไวขึ้นว่าใครคือ Seeker
+- Nameplate เป็น canvas-baked texture ต้อง build ใหม่ทุกครั้งที่เปลี่ยนสี (`Character3D.setNameColor`)
+
+### ไฟล์หลักที่แก้รอบนี้
+
+- `shared/gameConstants.ts` — เพิ่ม `SCAN_COOLDOWN_MS`, `SCAN_RADIUS_PX`, `SCAN_REVEAL_DURATION_MS`, `TRACE_COOLDOWN_MS`, `TRACE_REVEAL_DURATION_MS`, `MISSION_COOLDOWN_MS`, ปรับ `SEEKER_SPEED`
+- `shared/messages.ts` — เพิ่ม `RevealPingMessage`
+- `shared/mapLayout.ts` — เพิ่ม prop kind `trace-terminal`
+- `server/src/rooms/GameRoom.ts` — `handleScanPulse`, `triggerTraceTerminal`, cooldown maps ใหม่, mission cooldown gate
+- `client/src/screens/GameScreen.ts` — minimap filter, scan/trace key handling, `playRevealBeacons` (shadow silhouette), `playScanRing`, seeker mission HUD wiring, trace-reveal minimap wiring
+- `client/src/dom/Minimap.ts` — รองรับ `revealPoints` วาดวงแหวนสีแดง
+- `client/src/dom/GameHud.ts` — `setSeekerMission`, `setScanCooldown`
+- `client/src/entities3d/Character3D.ts`, `client/src/textures/nameplate.ts` — `setNameColor`
+
+### หมายเหตุการทดสอบ
+
+- Solo play (ผู้เล่นคนเดียว) จะได้ role Hider เสมอ เพราะ `assignRoles()` บังคับ `seekerCount = 0` เมื่อมีผู้เล่นแค่ 1 คน — ต้องเปิดสอง client/สอง browser tab เพื่อทดสอบฝั่ง Seeker
+- ทดสอบผ่าน 2-client script (join ห้องเดียวกันแล้วอ่าน role จาก state) และ local role-override สำหรับตรวจ UI/visual เฉพาะจุด ยืนยันแล้วว่าใช้งานได้ตามที่ตั้งใจ
