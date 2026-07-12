@@ -298,3 +298,11 @@ git status
 
 - Solo play (ผู้เล่นคนเดียว) จะได้ role Hider เสมอ เพราะ `assignRoles()` บังคับ `seekerCount = 0` เมื่อมีผู้เล่นแค่ 1 คน — ต้องเปิดสอง client/สอง browser tab เพื่อทดสอบฝั่ง Seeker
 - ทดสอบผ่าน 2-client script (join ห้องเดียวกันแล้วอ่าน role จาก state) และ local role-override สำหรับตรวจ UI/visual เฉพาะจุด ยืนยันแล้วว่าใช้งานได้ตามที่ตั้งใจ
+
+## Urgent Endgame Music
+
+- เพิ่ม music mood ใหม่ `urgent` เมื่อ phase SEEK เหลือเวลาไม่เกิน 30 วินาที
+- เพิ่มความเร็วจาก tense 0.72x เป็น urgent 0.48x ของระยะ step
+- เปลี่ยน arpeggio เป็น square wave เบาลงและเพิ่ม low heartbeat pulse สลับหนัก/เบา
+- เพิ่มความดังจาก 0.16 เป็น 0.19 ด้วย gain ramp 0.45 วินาที ไม่ตัดเพลงทันที
+- กลับเป็น calm/tense อัตโนมัติเมื่อเปลี่ยน phase หรือเริ่มรอบใหม่

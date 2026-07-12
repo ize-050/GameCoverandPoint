@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "seeker-scan-trace-v1",
+    release: "urgent-music-v2",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

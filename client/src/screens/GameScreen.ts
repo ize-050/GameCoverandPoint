@@ -441,9 +441,8 @@ export class GameScreen implements Screen {
   private updateHud(phase: string) {
     if (!this.hud || !this.room) return;
 
-    musicPlayer.setMood(phase === "seek" ? "tense" : "calm");
-
     const timeRemaining = this.room.state.timeRemaining;
+    musicPlayer.setMood(phase === "seek" && timeRemaining <= URGENT_TIME_SEC ? "urgent" : phase === "seek" ? "tense" : "calm");
     this.hud.setTimer(phase, timeRemaining, performance.now());
 
     const blackedOut = phase === "hide" && this.myPlayer?.role === "seeker";
