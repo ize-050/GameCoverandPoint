@@ -13,6 +13,7 @@ import {
   CEILING_LIGHTS,
   SMOKE_ITEM_SPAWNS,
   pointInRoom,
+  findRoomAt,
   collidesWithAnyWall,
   type RoomPropDef,
 } from "../../../shared/mapLayout";
@@ -147,8 +148,18 @@ const TRACE_TERMINAL_KIND = new Set<RoomPropDef["kind"]>(["trace-terminal"]);
 const EXIT_GATE_KIND = new Set<RoomPropDef["kind"]>(["exit-gate"]);
 const TOILET_USE_ANIM_MS = 2200;
 const URGENT_TIME_SEC = 30;
-const BASE_AMBIENT_INTENSITY = 0.52;
-const BASE_SUN_INTENSITY = 1.12;
+// PART 3 final-polish pass §3.1 — contrast flipped: corridors are the
+// office's "lights off after hours" baseline now (was uniformly bright
+// everywhere), rooms read as lit via their own warm floor overlay below
+// (buildLitRoomOverlays) rather than a bright global ambient.
+const BASE_AMBIENT_INTENSITY = 0.22;
+const BASE_SUN_INTENSITY = 0.4;
+// A lit room's warm floor/wall glow (spec's flat 0xfff0d8) — additive, so it
+// reads as "this room's lights are on" independent of the dim global
+// ambient above, and drops to 0 the instant that room's switch goes dark
+// (reusing the same darkRooms server state the black overlay below does).
+const ROOM_LIT_WARM_COLOR = 0xfff0d8;
+const ROOM_LIT_OVERLAY_OPACITY = 0.4;
 // Lowered further (was 0.12/0.05) to pair with the near-opaque darkness
 // overlay (DARKNESS_ALPHA) — the goal is "the lights are actually off", not
 // just dim, for whoever is standing inside the dark room themselves too.
@@ -241,6 +252,7 @@ export class GameScreen implements Screen {
   private ambientLight!: THREE.AmbientLight;
   private sunLight!: THREE.DirectionalLight;
   private darkRoomOverlays = new Map<string, { mesh: THREE.Mesh; opacity: number }>();
+  private litRoomOverlays = new Map<string, { mesh: THREE.Mesh; opacity: number }>();
   // Real GLB furniture models load async; every cover point/prop starts as
   // the existing procedural generated-texture mesh (a perfectly good
   // fallback) and gets swapped for a real model once preloadFurnitureModels()
@@ -248,6 +260,9 @@ export class GameScreen implements Screen {
   private coverPointModelTargets: Array<{ id: string; kind: string; obj: THREE.Object3D; tween: TWEEN.Tween<THREE.Vector3> }> = [];
   private roomPropModelTargets: Array<{ id: string; kind: string; obj: THREE.Object3D }> = [];
   private exitGateMaterials: THREE.MeshStandardMaterial[] = [];
+  // PART 3 final-polish pass §3.2 — server-rack LED strips, randomly
+  // re-toggled green/amber every 0.5-1s per spec, independent per rack.
+  private serverRackLeds: Array<{ material: THREE.MeshStandardMaterial; nextToggle: number }> = [];
 
   // Mouse camera controls (Stage 3) — additive alongside Q/E, not a
   // replacement. Bound as instance fields (not prototype methods) so the
@@ -425,6 +440,16 @@ export class GameScreen implements Screen {
     this.updateDarkRoomOverlays(dt);
     this.updateSmokeItems();
     this.updateMissionMarkers();
+    // PART 3 §3.2 — server rack LEDs blink green/amber on random 0.5-1s intervals.
+    const ledNow = performance.now();
+    for (const led of this.serverRackLeds) {
+      if (ledNow > led.nextToggle) {
+        const isGreen = led.material.color.getHex() === 0x22c55e;
+        led.material.color.setHex(isGreen ? 0xfacc15 : 0x22c55e);
+        led.material.emissive.setHex(isGreen ? 0xfacc15 : 0x22c55e);
+        led.nextToggle = ledNow + 500 + Math.random() * 500;
+      }
+    }
     const exitColour = this.room?.state.exitUnlocked ? 0x22c55e : 0xef4444;
     this.exitGateMaterials.forEach((material) => {
       material.color.setHex(exitColour);
@@ -1280,6 +1305,7 @@ export class GameScreen implements Screen {
     this.buildRoomProps();
     this.buildCeilingLights();
     this.buildDarkRoomOverlays();
+    this.buildLitRoomOverlays();
     this.buildSmokeItems();
     this.buildMissionMarkers();
   }
@@ -1310,8 +1336,18 @@ export class GameScreen implements Screen {
 
   private updateMissionMarkers() {
     if (!this.room) return;
+    // PART 2 final-polish pass §2.2 — marker only shows once the hider has
+    // actually walked into that mission's room (was visible map-wide before).
+    const myRoomId = this.localPlayer ? findRoomAt(this.localPlayer.character.position.x, this.localPlayer.character.position.z)?.id : undefined;
     this.missionMarkers.forEach((marker, missionId) => {
-      marker.visible = this.myPlayer?.role === "hider" && this.room!.state.phase === "seek" && this.room!.state.missions.has(missionId) && !this.room!.state.missions.get(missionId);
+      const mission = MISSION_POOL.find((candidate) => candidate.id === missionId);
+      const sameRoom = !!mission && mission.roomId === myRoomId;
+      marker.visible =
+        sameRoom &&
+        this.myPlayer?.role === "hider" &&
+        this.room!.state.phase === "seek" &&
+        this.room!.state.missions.has(missionId) &&
+        !this.room!.state.missions.get(missionId);
       marker.rotation.y += 0.012;
     });
   }
@@ -1641,6 +1677,8 @@ export class GameScreen implements Screen {
       edges[3].position.set(room.x + room.w - thickness / 2, borderY, room.y + room.h / 2);
       this.scene.add(...edges);
 
+      // PART 2 final-polish pass §2.1 #1 — door sign, now bilingual (Thai
+      // above, English below) per spec, same dark-plate/accent-border look.
       const labelCanvas = document.createElement("canvas");
       labelCanvas.width = 512;
       labelCanvas.height = 96;
@@ -1652,14 +1690,38 @@ export class GameScreen implements Screen {
       ctx.lineWidth = 5;
       ctx.stroke();
       ctx.fillStyle = "#ffffff";
-      ctx.font = "700 34px Segoe UI, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(style.label, 256, 49);
+      ctx.font = "700 24px 'Segoe UI', sans-serif";
+      ctx.fillText(style.labelTh, 256, 34);
+      ctx.font = "700 28px Segoe UI, sans-serif";
+      ctx.fillText(style.label, 256, 68);
       const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false }));
       label.scale.set(Math.min(170, room.w * 0.55), 32, 1);
       label.position.set(room.x + room.w / 2, 58, room.y + 18);
       this.scene.add(label);
+
+      // PART 2 final-polish pass §2.1 #2 — faint giant lettering flat on the
+      // floor at room center, readable from the isometric camera at a
+      // glance ("confirm you're inside" vs. the door sign's "which room is
+      // this from the corridor").
+      const floorLabelCanvas = document.createElement("canvas");
+      floorLabelCanvas.width = 512;
+      floorLabelCanvas.height = 128;
+      const flCtx = floorLabelCanvas.getContext("2d")!;
+      flCtx.fillStyle = "#ffffff";
+      flCtx.textAlign = "center";
+      flCtx.textBaseline = "middle";
+      flCtx.font = "900 88px Segoe UI, sans-serif";
+      flCtx.fillText(style.label, 256, 64);
+      const floorLabelSize = Math.min(room.w, room.h) * 0.82;
+      const floorLabel = new THREE.Mesh(
+        new THREE.PlaneGeometry(floorLabelSize, floorLabelSize * (128 / 512)),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(floorLabelCanvas), transparent: true, opacity: 0.12, depthWrite: false })
+      );
+      floorLabel.rotation.x = -Math.PI / 2;
+      floorLabel.position.set(room.x + room.w / 2, 0.85, room.y + room.h / 2);
+      this.scene.add(floorLabel);
 
       const glow = new THREE.PointLight(style.accent, room.id === "phonebooth" ? 0.35 : 0.22, Math.max(room.w, room.h) * 0.65, 2);
       glow.position.set(room.x + room.w / 2, 75, room.y + room.h / 2);
@@ -1763,7 +1825,15 @@ export class GameScreen implements Screen {
         monitorStand.position.set(6 * S, 19 * S, -3 * S);
         const monitorScreen = new THREE.Mesh(new THREE.BoxGeometry(11 * S, 8 * S, 1.2 * S), new THREE.MeshStandardMaterial({ map: monitorTex }));
         monitorScreen.position.set(6 * S, 25.5 * S, -3 * S);
-        group.add(desk, monitorBase, monitorStand, monitorScreen);
+        // PART 3 final-polish pass §3.2 — every desk is now a "cubicle set"
+        // (desk + monitor + chair), never a bare box; chair sits on the
+        // open side opposite the monitor, where a seated player would face it.
+        const chairMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+        const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(12 * S, 2 * S, 12 * S), chairMat);
+        chairSeat.position.set(0, 9 * S, 17 * S);
+        const chairBack = new THREE.Mesh(new THREE.BoxGeometry(12 * S, 14 * S, 2 * S), chairMat);
+        chairBack.position.set(0, 15 * S, 22 * S);
+        group.add(desk, monitorBase, monitorStand, monitorScreen, chairSeat, chairBack);
         obj = group;
       } else if (cp.kind === "conference-table") {
         // Meeting room centerpiece — one long shared table (chairs sit
@@ -1805,9 +1875,18 @@ export class GameScreen implements Screen {
         group.add(panel, door);
         obj = group;
       } else {
+        const group = new THREE.Group();
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(18 * S, 42 * S, 18 * S), new THREE.MeshStandardMaterial({ map: serverTex }));
         mesh.position.y = 21 * S;
-        obj = mesh;
+        // PART 3 final-polish pass §3.2 — blinking LED strip on the rack's
+        // front face; toggled green/amber on a random 0.5-1s interval (see
+        // serverRackLeds ticking in update()).
+        const ledMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 1.4 });
+        const led = new THREE.Mesh(new THREE.BoxGeometry(2 * S, 30 * S, 1 * S), ledMat);
+        led.position.set(7 * S, 21 * S, 9.2 * S);
+        group.add(mesh, led);
+        this.serverRackLeds.push({ material: ledMat, nextToggle: performance.now() + 500 + Math.random() * 500 });
+        obj = group;
       }
 
       obj.position.x = cp.x;
@@ -2217,6 +2296,40 @@ export class GameScreen implements Screen {
     }
   }
 
+  // PART 3 final-polish pass §3.1 — the inverse of buildDarkRoomOverlays:
+  // a warm additive floor glow for whichever rooms currently have their
+  // lights ON (i.e. NOT in `darkRooms`), so a lit room reads as visibly
+  // brighter than the now-dim corridor baseline. Same one-mesh-per-room,
+  // fade-toward-target approach, just additive/warm instead of black.
+  private buildLitRoomOverlays() {
+    for (const room of ROOMS) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: ROOM_LIT_WARM_COLOR,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(room.w, room.h), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(room.x + room.w / 2, 0.6, room.y + room.h / 2);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.litRoomOverlays.set(room.id, { mesh, opacity: 0 });
+    }
+  }
+
+  private updateLitRoomOverlays(dt: number) {
+    if (!this.room) return;
+    const ease = Math.min(1, LIGHT_EASE_RATE * dt);
+    this.litRoomOverlays.forEach((entry, roomId) => {
+      const target = this.room!.state.darkRooms.has(roomId) ? 0 : ROOM_LIT_OVERLAY_OPACITY;
+      entry.opacity = THREE.MathUtils.lerp(entry.opacity, target, ease);
+      (entry.mesh.material as THREE.MeshBasicMaterial).opacity = entry.opacity;
+      entry.mesh.visible = entry.opacity > 0.001;
+    });
+  }
+
   private updateDarkRoomOverlays(dt: number) {
     if (!this.room) return;
     const ease = Math.min(1, LIGHT_EASE_RATE * dt);
@@ -2226,6 +2339,7 @@ export class GameScreen implements Screen {
       (entry.mesh.material as THREE.MeshBasicMaterial).opacity = entry.opacity;
       entry.mesh.visible = entry.opacity > 0.001;
     });
+    this.updateLitRoomOverlays(dt);
   }
 
   // Floating glowing gift box per spawn point — hidden while that spot is on

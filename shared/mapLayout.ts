@@ -6,8 +6,6 @@
 // occupies each slot changed, not the slots themselves. Shared so client
 // (rendering/prediction) and server (collision validation) never drift apart.
 
-import { MAP_WIDTH, MAP_HEIGHT } from "./mapConfig.js";
-
 export interface WallRect {
   x: number;
   y: number;
@@ -37,17 +35,21 @@ export interface RoomVisualStyle {
   wall: number;
   minimap: string;
   label: string;
+  // PART 2 final-polish pass (AI-SPEC-final-polish_1.md §2.1): Thai half of
+  // the bilingual door sign — `label` stays the plain English name used
+  // everywhere else (minimap, mission "@ ROOM" suffix, floor lettering).
+  labelTh: string;
 }
 
 export const ROOM_VISUALS: Record<string, RoomVisualStyle> = {
-  server: { floor: 0x173451, accent: 0x22d3ee, wall: 0x8ecae6, minimap: "#164e63", label: "SERVER LAB" },
-  lounge: { floor: 0x5a3a2b, accent: 0xfb923c, wall: 0xf3c892, minimap: "#9a3412", label: "LOUNGE" },
-  toilet: { floor: 0x244b5a, accent: 0x67e8f9, wall: 0xcaf0f8, minimap: "#155e75", label: "RESTROOM" },
-  work_a: { floor: 0x214a43, accent: 0x34d399, wall: 0xa7f3d0, minimap: "#065f46", label: "WORK ZONE A" },
-  meeting: { floor: 0x57312f, accent: 0xfb7185, wall: 0xfecdd3, minimap: "#9f1239", label: "MEETING" },
-  work_b: { floor: 0x40345c, accent: 0xa78bfa, wall: 0xddd6fe, minimap: "#5b21b6", label: "WORK ZONE B" },
-  reception: { floor: 0x59491f, accent: 0xfacc15, wall: 0xfef08a, minimap: "#a16207", label: "RECEPTION" },
-  phonebooth: { floor: 0x562342, accent: 0xf472b6, wall: 0xfbcfe8, minimap: "#9d174d", label: "PHONE BOOTH" },
+  server: { floor: 0x173451, accent: 0x22d3ee, wall: 0x8ecae6, minimap: "#164e63", label: "SERVER LAB", labelTh: "ห้องเซิร์ฟเวอร์" },
+  lounge: { floor: 0x5a3a2b, accent: 0xfb923c, wall: 0xf3c892, minimap: "#9a3412", label: "LOUNGE", labelTh: "ห้องพักผ่อน" },
+  toilet: { floor: 0x244b5a, accent: 0x67e8f9, wall: 0xcaf0f8, minimap: "#155e75", label: "RESTROOM", labelTh: "ห้องน้ำ" },
+  work_a: { floor: 0x214a43, accent: 0x34d399, wall: 0xa7f3d0, minimap: "#065f46", label: "WORK ZONE A", labelTh: "โซนทำงาน เอ" },
+  meeting: { floor: 0x57312f, accent: 0xfb7185, wall: 0xfecdd3, minimap: "#9f1239", label: "MEETING", labelTh: "ห้องประชุม" },
+  work_b: { floor: 0x40345c, accent: 0xa78bfa, wall: 0xddd6fe, minimap: "#5b21b6", label: "WORK ZONE B", labelTh: "โซนทำงาน บี" },
+  reception: { floor: 0x59491f, accent: 0xfacc15, wall: 0xfef08a, minimap: "#a16207", label: "RECEPTION", labelTh: "ประชาสัมพันธ์" },
+  phonebooth: { floor: 0x562342, accent: 0xf472b6, wall: 0xfbcfe8, minimap: "#9d174d", label: "PHONE BOOTH", labelTh: "ตู้โทรศัพท์" },
 };
 
 const WALL_THICKNESS = 20;
@@ -199,7 +201,7 @@ const ROOMS_RAW: RoomSpec[] = [
   },
 ];
 
-export const ROOMS: RoomSpec[] = ROOMS_RAW.map((room) => ({
+const ROOMS_SCALED: RoomSpec[] = ROOMS_RAW.map((room) => ({
   ...room,
   x: scale(room.x),
   y: scale(room.y),
@@ -207,6 +209,94 @@ export const ROOMS: RoomSpec[] = ROOMS_RAW.map((room) => ({
   h: scale(room.h),
   doors: room.doors.map((d) => ({ ...d, at: scale(d.at), width: scale(d.width) })),
 }));
+
+// --- PART 1 final-polish pass (AI-SPEC-final-polish_1.md): shrink the empty
+// gaps between rooms and around the outer perimeter, WITHOUT touching any
+// room's own footprint ("ขนาดภายในทุกห้องคงเดิม 100%"). Every room's occupied
+// span on each axis (from ROOMS_SCALED above) defines an "identity band"
+// that passes through unchanged; only the corridor/perimeter space between
+// bands gets compressed. This runs once at module load, and every other
+// exported position below (walls, cover points, props, spawns, decorations)
+// is derived from these same remap functions, so nothing drifts out of sync.
+const GAP_COMPRESSION = 0.45; // tuned for ~30% overall map-area reduction (spec 1.2/1.3)
+const MIN_GAP_PX = 110; // floor so a compressed corridor stays >= ~3 player diameters
+const OLD_WORLD_WIDTH = 4160; // this layout's pre-shrink footprint (previously MAP_WIDTH)
+const OLD_WORLD_HEIGHT = 3120; // (previously MAP_HEIGHT)
+
+function mergeBands(intervals: Array<[number, number]>): Array<[number, number]> {
+  const sorted = intervals.slice().sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const [s, e] of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged;
+}
+
+// Piecewise-linear remap: identity (slope 1) inside every occupied band,
+// compressed (floored at MIN_GAP_PX) inside every gap between bands —
+// including before the first band and after the last (the outer perimeter).
+function buildAxisRemap(bands: Array<[number, number]>, extent: number): (old: number) => number {
+  const marks = [0, ...bands.flatMap(([s, e]) => [s, e]), extent];
+  const oldPts: number[] = [0];
+  const newPts: number[] = [0];
+  let newCursor = 0;
+  for (let i = 0; i < marks.length - 1; i++) {
+    const len = marks[i + 1] - marks[i];
+    if (len <= 0) continue;
+    const isGap = i % 2 === 0;
+    newCursor += isGap ? Math.max(MIN_GAP_PX, len * GAP_COMPRESSION) : len;
+    oldPts.push(marks[i + 1]);
+    newPts.push(newCursor);
+  }
+  return (old: number) => {
+    for (let i = 1; i < oldPts.length; i++) {
+      if (old <= oldPts[i] || i === oldPts.length - 1) {
+        const segLen = oldPts[i] - oldPts[i - 1];
+        const t = segLen > 0 ? (old - oldPts[i - 1]) / segLen : 0;
+        return newPts[i - 1] + t * (newPts[i] - newPts[i - 1]);
+      }
+    }
+    return old;
+  };
+}
+
+const bandsX = mergeBands(ROOMS_SCALED.map((r) => [r.x, r.x + r.w] as [number, number]));
+const bandsY = mergeBands(ROOMS_SCALED.map((r) => [r.y, r.y + r.h] as [number, number]));
+const remapX = buildAxisRemap(bandsX, OLD_WORLD_WIDTH);
+const remapY = buildAxisRemap(bandsY, OLD_WORLD_HEIGHT);
+
+// Final shrunk world footprint — mapConfig.ts's MAP_WIDTH/MAP_HEIGHT are
+// derived FROM these (not the other way around) so they can never drift out
+// of sync with what the remap functions above actually produce.
+export const WORLD_WIDTH = Math.round(remapX(OLD_WORLD_WIDTH));
+export const WORLD_HEIGHT = Math.round(remapY(OLD_WORLD_HEIGHT));
+
+function shrinkRect<T extends { x: number; y: number }>(rect: T): T {
+  return { ...rect, x: remapX(rect.x), y: remapY(rect.y) };
+}
+function shrinkPoint<T extends { x: number; y: number }>(p: T): T {
+  return { ...p, x: remapX(p.x), y: remapY(p.y) };
+}
+// Cluster helper: translates every wall/bay-center in a cubicle cluster by
+// ONE shared delta (from the cluster's own origin) rather than remapping
+// each corner independently — a cluster can straddle a gap/band boundary
+// (e.g. the NW/SW clusters cross the phone-booth's band on one axis), and
+// remapping each rect corner separately would locally distort the
+// cluster's shape instead of just moving it as a rigid whole.
+function shrinkCubicleCluster(originX: number, originY: number, block: { walls: WallRect[]; bayCenters: { x: number; y: number }[] }) {
+  const sx = scale(originX);
+  const sy = scale(originY);
+  const dx = remapX(sx) - sx;
+  const dy = remapY(sy) - sy;
+  return {
+    walls: block.walls.map(scaleWallRect).map((w) => ({ ...w, x: w.x + dx, y: w.y + dy })),
+    bayCenters: block.bayCenters.map(scaleXY).map((p) => ({ x: p.x + dx, y: p.y + dy })),
+  };
+}
+
+export const ROOMS: RoomSpec[] = ROOMS_SCALED.map(shrinkRect);
 
 // Freestanding wall segments in the open cubicle floor between rooms — break
 // sightlines without being a full room; also read as cubicle partitions.
@@ -268,23 +358,34 @@ const CUBICLE_C = cubicleBlock(5000, 3300, 2, 2, 200, 160);
 const WORK_A_DESKS = cubicleBlock(390, 1980, 2, 3, 280, 280);
 const WORK_B_DESKS = cubicleBlock(420, 3140, 3, 2, 280, 280);
 
+// PART 1 gap-shrink: each cluster gets ONE rigid translation (see
+// shrinkCubicleCluster) instead of per-rect remapping, so its internal
+// shape (partition spacing, desk bay layout) never distorts.
+const CUBICLE_NW_S = shrinkCubicleCluster(1900, 1060, CUBICLE_NW);
+const CUBICLE_NE_S = shrinkCubicleCluster(3950, 1350, CUBICLE_NE);
+const CUBICLE_SW_S = shrinkCubicleCluster(1900, 2950, CUBICLE_SW);
+const CUBICLE_SE_S = shrinkCubicleCluster(3950, 2950, CUBICLE_SE);
+const CUBICLE_C_S = shrinkCubicleCluster(5000, 3300, CUBICLE_C);
+const WORK_A_DESKS_S = shrinkCubicleCluster(390, 1980, WORK_A_DESKS);
+const WORK_B_DESKS_S = shrinkCubicleCluster(420, 3140, WORK_B_DESKS);
+
 export const WALLS: WallRect[] = [
-  // ROOMS is already the scaled export (buildRoomWalls commutes with a
-  // uniform scale, so building from the scaled rooms is equivalent to
-  // scaling the wall output — and this way door gaps stay aligned with the
-  // scaled room box).
+  // ROOMS is already the shrunk export (buildRoomWalls commutes with a
+  // uniform scale/translate, so building from the shrunk rooms is
+  // equivalent to shrinking the wall output — and this way door gaps stay
+  // aligned with the shrunk room box).
   ...ROOMS.flatMap(buildRoomWalls),
-  ...STANDALONE_WALLS_RAW.map(scaleWallRect),
-  ...CUBICLE_NW.walls.map(scaleWallRect),
-  ...CUBICLE_NE.walls.map(scaleWallRect),
-  ...CUBICLE_SW.walls.map(scaleWallRect),
-  ...CUBICLE_SE.walls.map(scaleWallRect),
-  ...CUBICLE_C.walls.map(scaleWallRect),
+  ...STANDALONE_WALLS_RAW.map(scaleWallRect).map(shrinkRect),
+  ...CUBICLE_NW_S.walls,
+  ...CUBICLE_NE_S.walls,
+  ...CUBICLE_SW_S.walls,
+  ...CUBICLE_SE_S.walls,
+  ...CUBICLE_C_S.walls,
   // Keep the horizontal cubicle dividers, but omit the vertical divider in
   // Work Zone A: it crossed the top doorway and left less than one player
   // diameter of usable clearance.
-  ...WORK_A_DESKS.walls.filter((wall) => wall.w > wall.h).map(scaleWallRect),
-  ...WORK_B_DESKS.walls.map(scaleWallRect),
+  ...WORK_A_DESKS_S.walls.filter((wall) => wall.w > wall.h),
+  ...WORK_B_DESKS_S.walls,
 ];
 
 const PLAYER_RADIUS = 16;
@@ -435,12 +536,12 @@ const COVER_POINTS_RAW: CoverPointDef[] = [
   { id: "cp-cube-c4", x: CUBICLE_C.bayCenters[3].x, y: CUBICLE_C.bayCenters[3].y, kind: "cabinet" },
 ];
 
-export const COVER_POINTS: CoverPointDef[] = COVER_POINTS_RAW.map((cp) => ({ ...cp, x: scale(cp.x), y: scale(cp.y) }));
+export const COVER_POINTS: CoverPointDef[] = COVER_POINTS_RAW.map((cp) => shrinkPoint({ ...cp, x: scale(cp.x), y: scale(cp.y) }));
 
 // Center of the reception room — the hub, and the seeker's holding spot
 // before "hide" phase ends (movement is already blocked for seekers during
 // hide phase, so no sealed room is needed here, just a room they spawn in).
-export const SEEKER_SPAWN = scaleXY({ x: 3150, y: 3900 });
+export const SEEKER_SPAWN = shrinkPoint(scaleXY({ x: 3150, y: 3900 }));
 
 // Points spread around the map so hiders spawn well clear of each other,
 // even with up to 9 concurrent hiders.
@@ -467,7 +568,7 @@ const HIDER_SPAWNS_RAW: { x: number; y: number }[] = [
   { x: 1300, y: 2400 },
 ];
 
-export const HIDER_SPAWNS: { x: number; y: number }[] = HIDER_SPAWNS_RAW.map(scaleXY);
+export const HIDER_SPAWNS: { x: number; y: number }[] = HIDER_SPAWNS_RAW.map((p) => shrinkPoint(scaleXY(p)));
 
 export function randomHiderSpawn(): { x: number; y: number } {
   return HIDER_SPAWNS[Math.floor(Math.random() * HIDER_SPAWNS.length)];
@@ -627,7 +728,7 @@ const ROOM_PROPS_RAW: RoomPropDef[] = [
   { id: "lounge-water-cooler", x: 2850, y: 1050, kind: "water-cooler" },
 ];
 
-export const ROOM_PROPS: RoomPropDef[] = ROOM_PROPS_RAW.map((p) => ({ ...p, x: scale(p.x), y: scale(p.y) }));
+export const ROOM_PROPS: RoomPropDef[] = ROOM_PROPS_RAW.map((p) => shrinkPoint({ ...p, x: scale(p.x), y: scale(p.y) }));
 
 // Hanging pendant lights — one per room plus one per cubicle-farm cluster,
 // purely ambient (reinforces "indoors under office lighting"), never
@@ -648,7 +749,7 @@ const CEILING_LIGHTS_RAW: { x: number; y: number }[] = [
   { x: 5200, y: 3460 },
 ];
 
-export const CEILING_LIGHTS: { x: number; y: number }[] = CEILING_LIGHTS_RAW.map(scaleXY);
+export const CEILING_LIGHTS: { x: number; y: number }[] = CEILING_LIGHTS_RAW.map((p) => shrinkPoint(scaleXY(p)));
 
 // Random item-box pickups — scattered across the open cubicle floor (not inside
 // any specific room), a scarce resource hiders must walk over to collect,
@@ -666,4 +767,4 @@ const SMOKE_ITEM_SPAWNS_RAW: SmokeItemSpawnDef[] = [
   { id: "smoke5", x: 1150, y: 3550 },
   { id: "smoke6", x: 4600, y: 3000 },
 ];
-export const SMOKE_ITEM_SPAWNS: SmokeItemSpawnDef[] = SMOKE_ITEM_SPAWNS_RAW.map(scaleXY);
+export const SMOKE_ITEM_SPAWNS: SmokeItemSpawnDef[] = SMOKE_ITEM_SPAWNS_RAW.map((p) => shrinkPoint(scaleXY(p)));

@@ -117,6 +117,9 @@ export class Minimap {
     });
 
     if (missions) {
+      // PART 2 final-polish pass §2.2 — blink the mission dot (was a static
+      // fill) so it reads as "active objective" at a glance on the minimap.
+      const blink = 0.55 + 0.45 * Math.sin(performance.now() / 220);
       missions.forEach((completed, missionId) => {
         if (completed) return;
         const mission = MISSION_POOL.find((candidate) => candidate.id === missionId);
@@ -124,7 +127,7 @@ export class Minimap {
         if (!prop) return;
         const x = prop.x * scaleX;
         const y = prop.y * scaleY;
-        ctx.fillStyle = "#facc15";
+        ctx.fillStyle = `rgba(250,204,21,${blink.toFixed(2)})`;
         ctx.beginPath();
         ctx.moveTo(x, y - (this.expanded ? 7 : 4));
         ctx.lineTo(x + (this.expanded ? 7 : 4), y);
