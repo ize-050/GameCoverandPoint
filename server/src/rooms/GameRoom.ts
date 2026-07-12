@@ -290,14 +290,12 @@ export class GameRoom extends Room<GameState> {
           this.coverOccupants.set(nearby.id, bot.id);
           bot.isHidden = true;
           bot.coverPointId = nearby.id;
-          bot.hiddenUntil = Date.now() + GAME_CONFIG.HIDE_MAX_DURATION_MS;
           this.clock.setTimeout(() => {
             if (!bot.isHidden || bot.coverPointId !== nearby.id) return;
             this.freeCoverPoint(nearby.id, bot.id);
             bot.isHidden = false;
             bot.coverPointId = "";
-            bot.hiddenUntil = 0;
-          }, GAME_CONFIG.HIDE_MAX_DURATION_MS);
+          }, GAME_CONFIG.BOT_HIDE_DURATION_MS);
           continue;
         }
       }
@@ -489,7 +487,6 @@ export class GameRoom extends Room<GameState> {
       player.isCaught = false;
       player.isEscaped = false;
       player.isHidden = false;
-      player.hiddenUntil = 0;
       player.coverPointId = "";
       player.inspectsRemaining = seekerSet.has(id) ? GAME_CONFIG.MAX_INSPECT_ATTEMPTS : 0;
       player.speedBoosted = false;
@@ -781,15 +778,9 @@ export class GameRoom extends Room<GameState> {
     this.coverOccupants.set(cp.id, client.sessionId);
     player.isHidden = true;
     player.coverPointId = cp.id;
-    player.hiddenUntil = Date.now() + GAME_CONFIG.HIDE_MAX_DURATION_MS;
     player.x = cp.x;
     player.y = cp.y;
     if (this.state.relocateActive) player.score += GAME_CONFIG.SCORE.RELOCATE_BONUS;
-    this.clock.setTimeout(() => {
-      const current = this.state.players.get(client.sessionId);
-      if (!current?.isHidden || current.coverPointId !== cp.id) return;
-      this.releaseHiddenPlayer(client, current, true);
-    }, GAME_CONFIG.HIDE_MAX_DURATION_MS);
   }
 
   private handleUnhide(client: Client) {
@@ -798,17 +789,16 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isHidden) return;
 
-    this.releaseHiddenPlayer(client, player, false);
+    this.releaseHiddenPlayer(client, player);
   }
 
-  private releaseHiddenPlayer(client: Client, player: Player, expired: boolean) {
+  private releaseHiddenPlayer(client: Client, player: Player) {
     const coverPointId = player.coverPointId;
     this.freeCoverPoint(coverPointId, client.sessionId);
     if (coverPointId) this.personalHideCooldownUntil.set(`${client.sessionId}:${coverPointId}`, Date.now() + GAME_CONFIG.HIDE_SPOT_COOLDOWN_MS);
     player.isHidden = false;
-    player.hiddenUntil = 0;
     player.coverPointId = "";
-    client.send(expired ? "hideExpired" : "hideCooldown", {
+    client.send("hideCooldown", {
       coverPointId,
       remainingMs: GAME_CONFIG.HIDE_SPOT_COOLDOWN_MS,
     });
@@ -855,7 +845,6 @@ export class GameRoom extends Room<GameState> {
   private resolveCatch(seekerClient: Client | undefined, seeker: Player, hider: Player | undefined) {
     if (hider) {
       hider.isHidden = false;
-      hider.hiddenUntil = 0;
       hider.isCaught = true;
       hider.coverPointId = "";
       this.clients.forEach((c) => {
@@ -962,7 +951,6 @@ export class GameRoom extends Room<GameState> {
     if (this.state.phase !== "seek" || !this.state.exitUnlocked || player.role !== "hider" || player.isCaught || player.isEscaped) return;
     if (player.isHidden) this.freeCoverPoint(player.coverPointId, client.sessionId);
     player.isHidden = false;
-    player.hiddenUntil = 0;
     player.coverPointId = "";
     player.isEscaped = true;
     player.isCaught = true; // escaped players become safe spectators

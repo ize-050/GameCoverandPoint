@@ -16,7 +16,7 @@ const HELP_HTML = `
     ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 15 })).join("")}
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("hider", { size: 16, color: "#fbbf24" })} <b>คนซ่อน</b></div>
-  <div style="margin-bottom:4px;">กด SPACE เพื่อซ่อนสูงสุด 10 วินาที จากนั้นจุดเดิม cooldown 12 วินาทีเฉพาะคุณ</div>
+  <div style="margin-bottom:4px;">กด SPACE เพื่อซ่อนจนกว่าจะกดออกเอง จากนั้นจุดเดิม cooldown 12 วินาทีเฉพาะคุณ</div>
   <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
   <div style="margin-bottom:4px;">เดินผ่านกล่องของขวัญเพื่อสุ่มไอเท็ม และกด Q เพื่อใช้ (ถือได้ครั้งละ 1 ชิ้น)</div>
   <div style="margin-bottom:4px;">ทำ Mission ครบ 3 จุดเพื่อปลดล็อก EXIT ที่ Reception แล้วไปกด SPACE เพื่อหนี</div>

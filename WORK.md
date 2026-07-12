@@ -370,3 +370,11 @@ git status
 - เพิ่ม AFK detection: ผู้เล่นจริงที่ไม่มีกิจกรรม 3 นาทีถูกนำออกจากห้องเพื่อคืนที่ว่าง
 - Room metadata อัปเดต visibility, phase และจำนวนผู้เล่นสำหรับ matchmaking/listing
 - ทดสอบ local ผ่าน Browser: solo room มี 3 Bots, เริ่มเกมได้, Quick Play สร้าง Public room, Room Browser พบ/Join ได้ และ Ready sync ข้ามสอง client สำเร็จ
+
+## Persistent Hiding
+
+- ยกเลิกเวลา 10 วินาทีและการดีด Hider ออกจากที่ซ่อนอัตโนมัติ ผู้เล่นซ่อนได้จนกด SPACE ออกเอง
+- รักษา personal cooldown จุดเดิม 12 วินาทีหลังออก ผู้เล่นคนอื่นยังใช้จุดนั้นได้ตามปกติ
+- ลบ countdown และข้อความ `ออกอัตโนมัติ` ออกจาก interaction hint และ Help panel
+- Bot ยังมี hide cycle 8 วินาทีเพื่อให้ solo match เดินต่อและไม่เกิด Bot ซ่อนถาวร
+- ตรวจ client/server production build ผ่าน

@@ -649,14 +649,10 @@ export class GameScreen implements Screen {
     const offHideCooldown = room.onMessage("hideCooldown", (msg: CooldownMessage) => {
       if (msg.coverPointId) this.personalHideCooldowns.set(msg.coverPointId, performance.now() + msg.remainingMs);
     });
-    const offHideExpired = room.onMessage("hideExpired", (msg: CooldownMessage) => {
-      if (msg.coverPointId) this.personalHideCooldowns.set(msg.coverPointId, performance.now() + msg.remainingMs);
-      this.hud?.showFeedback(`ออกจากที่ซ่อนอัตโนมัติ — จุดนี้พัก ${Math.ceil(msg.remainingMs / 1000)} วิสำหรับคุณ`);
-    });
     const offHideUnavailable = room.onMessage("hideUnavailable", () => {
       this.hud?.showFeedback("เฟอร์นิเจอร์ชิ้นนี้ไม่ใช่จุดซ่อนในรอบนี้ — ลองจุดอื่น");
     });
-    this.unsubs.push(offTraceCooldown, offHideCooldown, offHideExpired, offHideUnavailable);
+    this.unsubs.push(offTraceCooldown, offHideCooldown, offHideUnavailable);
 
     const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
       const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
@@ -1106,10 +1102,7 @@ export class GameScreen implements Screen {
     if (!me || me.isCaught || !this.localPlayer || !this.room) return null;
     if (phase !== "hide" && phase !== "seek") return null;
 
-    if (me.role === "hider" && me.isHidden) {
-      const seconds = Math.max(0, Math.ceil((me.hiddenUntil - Date.now()) / 1000));
-      return `[SPACE] ออกจากที่ซ่อน · ออกอัตโนมัติใน ${seconds} วิ`;
-    }
+    if (me.role === "hider" && me.isHidden) return "[SPACE] ออกจากที่ซ่อน";
 
     const lightSwitch = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, LIGHT_SWITCH_KIND);
     if (lightSwitch) return propHintText(lightSwitch.kind);

@@ -12,8 +12,8 @@ export const GAME_CONFIG = {
   // seeker to feel noticeably quicker without being drastic.
   SEEKER_SPEED: 230,
   HIDE_RANGE_PX: 40,
-  HIDE_MAX_DURATION_MS: 10000,
   HIDE_SPOT_COOLDOWN_MS: 12000,
+  BOT_HIDE_DURATION_MS: 8000,
   INSPECT_RANGE_PX: 40,
   INSPECT_COOLDOWN_MS: 3000,
   TAG_RANGE_PX: 45,
