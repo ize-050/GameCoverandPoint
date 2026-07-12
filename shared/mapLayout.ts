@@ -551,7 +551,8 @@ export type RoomPropKind =
   | "bulletin-board"
   | "water-cooler"
   | "report-terminal"
-  | "trace-terminal";
+  | "trace-terminal"
+  | "exit-gate";
 export interface RoomPropDef {
   id: string;
   x: number;
@@ -620,6 +621,9 @@ const ROOM_PROPS_RAW: RoomPropDef[] = [
   // room they already start in. Long cooldown, big payoff (reveals every
   // hider's position briefly), unlike the hider mission props above.
   { id: "trace-terminal", x: 3150, y: 4150, kind: "trace-terminal" },
+  // Final objective: completing all office missions powers this gate. It is
+  // placed at Reception's outer edge so the story ends by clocking out.
+  { id: "exit-gate", x: 3200, y: 4250, kind: "exit-gate" },
   { id: "lounge-water-cooler", x: 2850, y: 1050, kind: "water-cooler" },
 ];
 

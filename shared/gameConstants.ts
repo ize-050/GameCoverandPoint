@@ -65,6 +65,8 @@ export const GAME_CONFIG = {
   // Playtest feedback: missions could be chained instantly back-to-back —
   // a short cooldown after each completion forces some travel time between them.
   MISSION_COOLDOWN_MS: 12000,
+  MISSION_INTERACTION_MS: 3000,
+  EXIT_SCORE: 100,
   // Seeker's "scan" ability (F key) — a one-shot reveal of hidden hiders
   // within radius, sent as a private snapshot message (not a live schema
   // exposure) so it can't be exploited by just watching network traffic

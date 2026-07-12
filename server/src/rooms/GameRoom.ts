@@ -83,6 +83,7 @@ export class GameRoom extends Room<GameState> {
   private stunTraps: Array<{ id: string; x: number; y: number; ownerId: string }> = [];
   private survivalMilestones = new Set<number>();
   private missionCooldownUntil = new Map<string, number>();
+  private missionStartedAt = new Map<string, { missionId: string; startedAt: number }>();
   private scanCooldownUntil = new Map<string, number>();
   private traceCooldownUntil = new Map<string, number>();
   private roundDecoyCoverPointIds = new Set<string>();
@@ -122,6 +123,8 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("scanPulse", (client) => this.handleScanPulse(client));
     this.onMessage("useItem", (client) => this.handleUseItem(client));
     this.onMessage("completeMission", (client, message: { missionId?: string }) => this.handleCompleteMission(client, message));
+    this.onMessage("startMission", (client, message: { missionId?: string }) => this.handleStartMission(client, message));
+    this.onMessage("cancelMission", (client) => this.missionStartedAt.delete(client.sessionId));
 
     this.clock.setInterval(() => this.tick(), 1000);
 
@@ -243,6 +246,7 @@ export class GameRoom extends Room<GameState> {
     this.toiletUseCooldownUntil.delete(client.sessionId);
     this.itemCooldownUntil.delete(client.sessionId);
     this.missionCooldownUntil.delete(client.sessionId);
+    this.missionStartedAt.delete(client.sessionId);
     this.scanCooldownUntil.delete(client.sessionId);
     this.traceCooldownUntil.delete(client.sessionId);
 
@@ -315,6 +319,7 @@ export class GameRoom extends Room<GameState> {
       const player = this.state.players.get(id)!;
       player.role = seekerSet.has(id) ? "seeker" : "hider";
       player.isCaught = false;
+      player.isEscaped = false;
       player.isHidden = false;
       player.hiddenUntil = 0;
       player.coverPointId = "";
@@ -344,6 +349,7 @@ export class GameRoom extends Room<GameState> {
     this.toiletUseCooldownUntil.clear();
     this.itemCooldownUntil.clear();
     this.missionCooldownUntil.clear();
+    this.missionStartedAt.clear();
     this.scanCooldownUntil.clear();
     this.traceCooldownUntil.clear();
     this.personalHideCooldownUntil.clear();
@@ -356,6 +362,7 @@ export class GameRoom extends Room<GameState> {
     this.stunTraps = [];
     this.survivalMilestones.clear();
     this.state.relocateActive = false;
+    this.state.exitUnlocked = false;
     this.state.darkRooms.clear();
     this.state.collectedSmokeItems.clear();
     this.state.missions.clear();
@@ -393,7 +400,7 @@ export class GameRoom extends Room<GameState> {
 
   private endRound() {
     const hiders = [...this.state.players.values()].filter((p) => p.role === "hider");
-    const survivors = hiders.filter((p) => !p.isCaught);
+    const survivors = hiders.filter((p) => p.isEscaped);
 
     for (const survivor of survivors) survivor.score += GAME_CONFIG.SCORE.SURVIVE;
     if (survivors.length === 1) survivors[0].score += GAME_CONFIG.SCORE.LAST_SURVIVOR_BONUS;
@@ -511,12 +518,26 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  private handleStartMission(client: Client, message: { missionId?: string }) {
+    if (this.state.phase !== "seek") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.role !== "hider" || player.isCaught || player.isEscaped || player.isHidden || !message?.missionId) return;
+    const mission = MISSION_POOL.find((candidate) => candidate.id === message.missionId);
+    const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
+    if (!mission || !prop || !this.state.missions.has(mission.id) || this.state.missions.get(mission.id)) return;
+    if (Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
+    this.missionStartedAt.set(client.sessionId, { missionId: mission.id, startedAt: Date.now() });
+  }
+
   private handleCompleteMission(client: Client, message: { missionId?: string }) {
     if (this.state.phase !== "seek") return;
     const player = this.state.players.get(client.sessionId);
-    if (!player || player.role !== "hider" || player.isCaught || player.isHidden) return;
+    if (!player || player.role !== "hider" || player.isCaught || player.isEscaped || player.isHidden) return;
     if (!message?.missionId || !this.state.missions.has(message.missionId) || this.state.missions.get(message.missionId)) return;
     const now = Date.now();
+    const interaction = this.missionStartedAt.get(client.sessionId);
+    this.missionStartedAt.delete(client.sessionId);
+    if (!interaction || interaction.missionId !== message.missionId || now - interaction.startedAt < GAME_CONFIG.MISSION_INTERACTION_MS - 100) return;
     if (now < (this.missionCooldownUntil.get(client.sessionId) ?? 0)) return;
     const mission = MISSION_POOL.find((candidate) => candidate.id === message.missionId);
     const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
@@ -532,7 +553,9 @@ export class GameRoom extends Room<GameState> {
         if (candidate.role === "hider" && !candidate.isCaught) candidate.score += ALL_MISSIONS_BONUS;
       });
       this.state.timeRemaining = Math.max(30, this.state.timeRemaining - 20);
+      this.state.exitUnlocked = true;
       this.broadcast("allMissionsComplete", { points: ALL_MISSIONS_BONUS, timeReduced: 20 });
+      this.broadcast("exitUnlocked", {});
     }
   }
 
@@ -752,10 +775,32 @@ export class GameRoom extends Room<GameState> {
       this.triggerTraceTerminal(client, player);
       return;
     }
+    if (prop.kind === "exit-gate") {
+      this.triggerEscape(client, player);
+      return;
+    }
     if (player.role !== "hider") return;
     if (prop.kind === "whiteboard") this.triggerWhiteboardDecoy(client);
     else if (prop.kind === "coffee-machine") this.triggerCoffeeBoost(client, player);
     else if (prop.kind === "monitor") this.triggerMonitorPeek(client);
+  }
+
+  private triggerEscape(client: Client, player: Player) {
+    if (this.state.phase !== "seek" || !this.state.exitUnlocked || player.role !== "hider" || player.isCaught || player.isEscaped) return;
+    if (player.isHidden) this.freeCoverPoint(player.coverPointId, client.sessionId);
+    player.isHidden = false;
+    player.hiddenUntil = 0;
+    player.coverPointId = "";
+    player.isEscaped = true;
+    player.isCaught = true; // escaped players become safe spectators
+    player.score += GAME_CONFIG.EXIT_SCORE;
+    client.send("escaped", { points: GAME_CONFIG.EXIT_SCORE });
+    this.broadcast("playerEscaped", { nickname: player.nickname });
+
+    const anyHiderStillInside = [...this.state.players.values()].some((candidate) =>
+      candidate.role === "hider" && !candidate.isCaught && !candidate.isEscaped
+    );
+    if (!anyHiderStillInside) this.endRound();
   }
 
   // Seeker's "scan" ability (F key) — a one-shot private snapshot of every

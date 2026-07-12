@@ -12,6 +12,7 @@ export class Player extends Schema {
   @type("number") hiddenUntil: number = 0;
   @type("string") coverPointId: string = "";
   @type("boolean") isCaught: boolean = false;
+  @type("boolean") isEscaped: boolean = false;
   @type("number") score: number = 0;
   @type("boolean") isHost: boolean = false;
   @type("number") inspectsRemaining: number = 0;

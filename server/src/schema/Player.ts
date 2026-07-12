@@ -30,6 +30,7 @@ export class Player extends Schema {
   // as x/y would (it's a lookup into a publicly-known list of coordinates).
   @filter(positionFilter) @type("string") coverPointId: string = "";
   @type("boolean") isCaught: boolean = false;
+  @type("boolean") isEscaped: boolean = false;
   @type("number") score: number = 0;
   @type("boolean") isHost: boolean = false;
   // Seeker's total inspect budget for the round (spec: no more infinite

@@ -9,6 +9,7 @@ export class GameState extends Schema {
   @type("number") seekerCount: number = 1;
   @type("string") roomCode: string = "";
   @type("boolean") relocateActive: boolean = false;
+  @type("boolean") exitUnlocked: boolean = false;
   @type({ map: "boolean" }) darkRooms = new MapSchema<boolean>();
   @type({ map: "boolean" }) collectedSmokeItems = new MapSchema<boolean>();
   @type({ map: "boolean" }) missions = new MapSchema<boolean>();

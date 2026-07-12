@@ -83,7 +83,8 @@ export class Minimap {
     localPos: { x: number; z: number },
     remotes: Map<string, RemotePlayer3D>,
     missions?: Map<string, boolean>,
-    revealPoints?: { x: number; y: number }[]
+    revealPoints?: { x: number; y: number }[],
+    exitUnlocked = false
   ) {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
@@ -132,6 +133,24 @@ export class Minimap {
         ctx.closePath();
         ctx.fill();
       });
+    }
+
+    if (exitUnlocked) {
+      const exit = ROOM_PROPS.find((prop) => prop.kind === "exit-gate");
+      if (exit) {
+        const x = exit.x * scaleX;
+        const y = exit.y * scaleY;
+        ctx.fillStyle = "#22c55e";
+        ctx.strokeStyle = "#dcfce7";
+        ctx.lineWidth = 2;
+        ctx.fillRect(x - 6, y - 6, 12, 12);
+        ctx.strokeRect(x - 7, y - 7, 14, 14);
+        if (this.expanded) {
+          ctx.fillStyle = "#dcfce7";
+          ctx.font = "bold 11px 'Segoe UI', system-ui, sans-serif";
+          ctx.fillText("EXIT", x, y - 13);
+        }
+      }
     }
 
     // Trace-terminal snapshot — the seeker's client never receives a hidden

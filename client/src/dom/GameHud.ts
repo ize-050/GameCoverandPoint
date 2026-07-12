@@ -9,16 +9,17 @@ const HELP_HTML = `
   <div style="margin-bottom:6px;">กล้อง isometric ล็อกมุมและซูมเท่ากันสำหรับผู้เล่นทุกคน</div>
   <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
   <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
-  <div style="margin-bottom:6px;">E — ทำ Office Mission เมื่ออยู่ที่จุดสีเหลือง</div>
+  <div style="margin-bottom:6px;">กด E ค้าง 3 วินาที — ทำ Office Mission (ปล่อยหรือเดินออกเพื่อยกเลิก)</div>
   <div style="margin-bottom:6px;">C — Hider: สลับกล้องไปดูเพื่อน 4 วินาที</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
     1 2 3 4 — ส่งอีโมจิ
     ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 15 })).join("")}
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("hider", { size: 16, color: "#fbbf24" })} <b>คนซ่อน</b></div>
-  <div style="margin-bottom:4px;">เดินไปจุดซ่อน กด SPACE เพื่อซ่อน หรือย้ายที่ซ่อนได้ตลอดเวลา</div>
+  <div style="margin-bottom:4px;">กด SPACE เพื่อซ่อนสูงสุด 10 วินาที จากนั้นจุดเดิม cooldown 12 วินาทีเฉพาะคุณ</div>
   <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
   <div style="margin-bottom:4px;">เดินผ่านกล่องของขวัญเพื่อสุ่มไอเท็ม และกด Q เพื่อใช้ (ถือได้ครั้งละ 1 ชิ้น)</div>
+  <div style="margin-bottom:4px;">ทำ Mission ครบ 3 จุดเพื่อปลดล็อก EXIT ที่ Reception แล้วไปกด SPACE เพื่อหนี</div>
   <div style="margin-bottom:12px;">เข้าใกล้ของในห้องแล้วกด SPACE: กระดาน (หลอกคนหา) / เครื่องชงกาแฟ (วิ่งเร็วขึ้น) / จอมอนิเตอร์ (ดูตำแหน่งห้องของคนหา)</div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>สวิตช์ไฟ (ทุกคน)</b></div>
   <div style="margin-bottom:4px;">เข้าใกล้สวิตช์ข้างประตูแล้วกด SPACE เพื่อเปิด/ปิดไฟห้องนั้น</div>
@@ -205,12 +206,13 @@ export class GameHud {
     this.itemEl.style.background = styles[item] ?? "#0f172acc";
   }
 
-  setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean) {
+  setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean, exitUnlocked = false) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
     const done = missions.filter((mission) => completed.has(mission.id)).length;
-    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${done}/${missions.length}</div><div style="color:#94a3b8;margin-bottom:7px;">Go to ◆ and press E. Seeker cannot see these.</div>` +
-      missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("");
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${done}/${missions.length}</div><div style="color:#94a3b8;margin-bottom:7px;">Go to ◆ and hold E for 3s.</div>` +
+      missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("") +
+      `<div style="margin-top:9px;padding-top:7px;border-top:1px solid #ffffff22;color:${exitUnlocked ? "#4ade80" : "#fca5a5"};font-weight:800;">${exitUnlocked ? "🚪 EXIT OPEN — ESCAPE AT RECEPTION" : "🔒 EXIT LOCKED"}</div>`;
   }
 
   // Seeker's equivalent of the hider mission panel — reuses the same corner

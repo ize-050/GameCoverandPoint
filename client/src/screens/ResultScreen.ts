@@ -19,7 +19,7 @@ export class ResultScreen implements Screen {
     this.room = data?.room;
     if (!this.room) return;
 
-    const hiderWon = [...this.room.state.players.values()].some((p) => p.role === "hider" && !p.isCaught);
+    const hiderWon = [...this.room.state.players.values()].some((p) => p.role === "hider" && p.isEscaped);
     if (this.room.state.phase === "result") playRoundWinSfx();
 
     const sorted = [...this.room.state.players.values()].sort((a, b) => b.score - a.score);
@@ -36,7 +36,7 @@ export class ResultScreen implements Screen {
             <div style="width:26px;text-align:center;font-size:15px;">${rank}</div>
             <div style="flex:1;font-size:14px;color:#f1f5f9;display:flex;align-items:center;gap:5px;">${
               p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : ""
-            }${escapeHtml(p.nickname)}${isMvp ? " " + icon("star", { size: 13, color: "#fbbf24" }) : ""}</div>
+            }${escapeHtml(p.nickname)}${p.isEscaped ? " 🚪 ESCAPED" : ""}${isMvp ? " " + icon("star", { size: 13, color: "#fbbf24" }) : ""}</div>
             <div style="font-weight:800;color:${isMvp ? "#fbbf24" : "#67e8f9"};font-size:15px;">${p.score} pts</div>
           </div>`;
       })
@@ -56,7 +56,7 @@ export class ResultScreen implements Screen {
         <div class="hns-title" style="font-size:32px;color:#fff;text-shadow:0 0 16px ${hiderWon ? "#4ade80" : "#22d3ee"};display:flex;align-items:center;justify-content:center;gap:10px;">
           ${
             hiderWon
-              ? icon("party", { size: 28, color: "#4ade80" }) + " ทีมซ่อนชนะ!"
+              ? icon("party", { size: 28, color: "#4ade80" }) + " Clock-Out Crew หนีสำเร็จ!"
               : icon("seeker", { size: 28, color: "#22d3ee" }) + " ทีมหาชนะ!"
           }
         </div>

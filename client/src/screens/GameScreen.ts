@@ -144,6 +144,7 @@ const LIGHT_SWITCH_KIND = new Set<RoomPropDef["kind"]>(["light-switch"]);
 const TOILET_USE_KIND = new Set<RoomPropDef["kind"]>(["toilet-use"]);
 // Seeker-only ability anchor (reception hub) — long-cooldown reveal.
 const TRACE_TERMINAL_KIND = new Set<RoomPropDef["kind"]>(["trace-terminal"]);
+const EXIT_GATE_KIND = new Set<RoomPropDef["kind"]>(["exit-gate"]);
 const TOILET_USE_ANIM_MS = 2200;
 const URGENT_TIME_SEC = 30;
 const BASE_AMBIENT_INTENSITY = 0.52;
@@ -226,6 +227,9 @@ export class GameScreen implements Screen {
   private heldItemVisualKind = "";
   private cameraTargetPlayerId = "";
   private teammateCameraUntil = 0;
+  private missionInteractionId = "";
+  private missionInteractionStartedAt = 0;
+  private missionInteractionSent = false;
   private teammateCameraCursor = -1;
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
@@ -243,6 +247,7 @@ export class GameScreen implements Screen {
   // resolves, for whichever kinds have one (see FURNITURE_MODEL_PATHS).
   private coverPointModelTargets: Array<{ id: string; kind: string; obj: THREE.Object3D; tween: TWEEN.Tween<THREE.Vector3> }> = [];
   private roomPropModelTargets: Array<{ id: string; kind: string; obj: THREE.Object3D }> = [];
+  private exitGateMaterials: THREE.MeshStandardMaterial[] = [];
 
   // Mouse camera controls (Stage 3) — additive alongside Q/E, not a
   // replacement. Bound as instance fields (not prototype methods) so the
@@ -305,6 +310,9 @@ export class GameScreen implements Screen {
     this.traceRevealUntil = 0;
     this.traceRevealPoints = [];
     this.scanCooldownUntil = 0;
+    this.missionInteractionId = "";
+    this.missionInteractionStartedAt = 0;
+    this.missionInteractionSent = false;
     this.lastScanOrigin = null;
     this.hud?.destroy();
     this.hud = undefined;
@@ -336,7 +344,7 @@ export class GameScreen implements Screen {
     if (this.room && this.localPlayer && this.myPlayer) {
       const isGhost = this.myPlayer.isCaught;
       const blackedOut = phase === "hide" && this.myPlayer.role === "seeker";
-      const canMove = (phase === "hide" || phase === "seek") && !blackedOut && !this.myPlayer.isHidden;
+      const canMove = (phase === "hide" || phase === "seek") && !blackedOut && !this.myPlayer.isHidden && !this.missionInteractionId;
 
       this.localPlayer.update(dt * 1000, {
         canMove,
@@ -368,10 +376,7 @@ export class GameScreen implements Screen {
         });
         if (this.myPlayer.role === "hider") {
           if (keyboard.justDown("KeyQ") && this.myPlayer.heldItem) this.room!.send("useItem");
-          if (keyboard.justDown("KeyE")) {
-            const mission = this.findNearbyMission();
-            if (mission) this.room!.send("completeMission", { missionId: mission.id });
-          }
+          this.updateMissionInteraction();
           if (keyboard.justDown("KeyC")) this.cycleTeammateCamera();
         }
         if (this.myPlayer.role === "seeker") {
@@ -409,13 +414,19 @@ export class GameScreen implements Screen {
         { x: pos.x, z: pos.z },
         minimapRemotes,
         new Map(this.room?.state.missions.entries() ?? []),
-        traceRevealActive ? this.traceRevealPoints : undefined
+        traceRevealActive ? this.traceRevealPoints : undefined,
+        this.room?.state.exitUnlocked ?? false
       );
     }
 
     this.updateDarkRoomOverlays(dt);
     this.updateSmokeItems();
     this.updateMissionMarkers();
+    const exitColour = this.room?.state.exitUnlocked ? 0x22c55e : 0xef4444;
+    this.exitGateMaterials.forEach((material) => {
+      material.color.setHex(exitColour);
+      material.emissive.setHex(exitColour);
+    });
     if (this.myPlayer && (this.myPlayer.isDazed || this.myPlayer.isStunned) !== this.prevDazed) {
       this.prevDazed = this.myPlayer.isDazed || this.myPlayer.isStunned;
       this.hud?.setDazed(this.prevDazed);
@@ -477,7 +488,7 @@ export class GameScreen implements Screen {
       const traceRemainingSec = Math.ceil(Math.max(0, this.traceCooldownUntil - performance.now()) / 1000);
       this.hud.setSeekerMission(true, traceRemainingSec);
     } else {
-      this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions);
+      this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions, this.room.state.exitUnlocked);
     }
     const scanRemainingSec = this.myPlayer?.role === "seeker" ? Math.ceil(Math.max(0, this.scanCooldownUntil - performance.now()) / 1000) : 0;
     this.hud.setScanCooldown(scanRemainingSec);
@@ -667,9 +678,17 @@ export class GameScreen implements Screen {
       this.hud?.showFeedback(`✅ ${escapeHtml(msg.nickname)} completed ${escapeHtml(msg.title)} +${msg.points}`);
     });
     const offAllMissions = room.onMessage("allMissionsComplete", (msg: { points: number; timeReduced: number }) => {
-      this.hud?.showFeedback(`🏆 ALL MISSIONS COMPLETE! +${msg.points} · ${msg.timeReduced}s reduced`, 2600);
+      this.hud?.showFeedback(`🚪 EXIT UNLOCKED! ไปที่ประตู Reception · +${msg.points}`, 3200);
     });
     this.unsubs.push(offMissionComplete, offAllMissions);
+
+    const offEscaped = room.onMessage("escaped", (msg: { points: number }) => {
+      this.hud?.showFeedback(`✅ CLOCKED OUT! หนีสำเร็จ +${msg.points}`, 3000);
+    });
+    const offPlayerEscaped = room.onMessage("playerEscaped", (msg: { nickname: string }) => {
+      this.hud?.showFeedback(`🚪 ${escapeHtml(msg.nickname)} escaped the office!`, 1800);
+    });
+    this.unsubs.push(offEscaped, offPlayerEscaped);
 
     const offTrapPlaced = room.onMessage("trapPlaced", (msg: TrapMessage) => {
       const mesh = new THREE.Mesh(
@@ -1081,7 +1100,7 @@ export class GameScreen implements Screen {
   // on-screen indication of how to come back out.
   private computeHint(phase: string): string | null {
     const me = this.myPlayer;
-    if (!me || me.isCaught || !this.localPlayer) return null;
+    if (!me || me.isCaught || !this.localPlayer || !this.room) return null;
     if (phase !== "hide" && phase !== "seek") return null;
 
     if (me.role === "hider" && me.isHidden) {
@@ -1096,8 +1115,17 @@ export class GameScreen implements Screen {
     if (toiletUse) return propHintText(toiletUse.kind);
 
     if (me.role === "hider") {
+      const exit = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, EXIT_GATE_KIND);
+      if (exit) return this.room.state.exitUnlocked ? "[SPACE] CLOCK OUT — หนีออกจาก Office" : "EXIT LOCKED — ทำ Mission ให้ครบก่อน";
       const mission = this.findNearbyMission();
-      if (mission) return `[E] ${mission.title}`;
+      if (mission) {
+        if (this.missionInteractionId === mission.id) {
+          const ratio = Math.min(1, (performance.now() - this.missionInteractionStartedAt) / GAME_CONFIG.MISSION_INTERACTION_MS);
+          const filled = Math.round(ratio * 10);
+          return `HOLD E ${mission.title}  ${"█".repeat(filled)}${"░".repeat(10 - filled)} ${Math.round(ratio * 100)}%`;
+        }
+        return `[HOLD E 3s] ${mission.title}`;
+      }
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
       if (me.heldItem) return "[Q] ใช้ไอเท็มที่ถืออยู่";
@@ -1136,6 +1164,27 @@ export class GameScreen implements Screen {
     });
   }
 
+  private updateMissionInteraction() {
+    const mission = this.findNearbyMission();
+    if (!keyboard.isDown("KeyE") || !mission) {
+      if (this.missionInteractionId) this.room?.send("cancelMission");
+      this.missionInteractionId = "";
+      this.missionInteractionStartedAt = 0;
+      this.missionInteractionSent = false;
+      return;
+    }
+    if (this.missionInteractionId !== mission.id) {
+      this.missionInteractionId = mission.id;
+      this.missionInteractionStartedAt = performance.now();
+      this.missionInteractionSent = false;
+      this.room?.send("startMission", { missionId: mission.id });
+    }
+    if (!this.missionInteractionSent && performance.now() - this.missionInteractionStartedAt >= GAME_CONFIG.MISSION_INTERACTION_MS) {
+      this.missionInteractionSent = true;
+      this.room?.send("completeMission", { missionId: mission.id });
+    }
+  }
+
   private handleSpacePress() {
     const me = this.myPlayer;
     if (!me || me.isCaught) return;
@@ -1163,6 +1212,12 @@ export class GameScreen implements Screen {
     }
 
     if (me.role === "hider") {
+      const exit = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, EXIT_GATE_KIND);
+      if (exit) {
+        if (this.room?.state.exitUnlocked) this.room.send("useProp", { propId: exit.id });
+        else this.hud?.showFeedback("EXIT LOCKED — ทำ Office Missions ให้ครบก่อน");
+        return;
+      }
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) {
         this.room?.send("useProp", { propId: prop.id });
@@ -1468,6 +1523,54 @@ export class GameScreen implements Screen {
       box(c.x, c.z, 18, 7, 10, 0x111827, 25);
       for (let i = 0; i < 3; i++) box(r.x + 8, r.y + 16 + i * 28, 3, 20, 18, i % 2 ? 0xdb2777 : 0x831843, 22);
       cylinder(c.x + 14, c.z - 7, 3, 9, 0xf472b6, 30);
+    }
+
+    // Large room landmarks: a few strong silhouettes do more for navigation
+    // than dozens of tiny scattered props, while remaining visual-only so
+    // the established collision layout does not change.
+    {
+      const p = at("server", 0.5, 0.48);
+      const core = cylinder(p.x, p.z, 22, 62, 0x0f2740);
+      core.material = new THREE.MeshStandardMaterial({ color: 0x0f2740, emissive: 0x0891b2, emissiveIntensity: 0.32, metalness: 0.45 });
+      for (let i = 0; i < 3; i++) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(25 + i * 3, 2, 8, 24), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(p.x, 18 + i * 15, p.z);
+        this.scene.add(ring);
+      }
+    }
+    {
+      const r = room("lounge");
+      box(r.x + r.w * 0.5, r.y + r.h * 0.64, r.w * 0.58, 1, r.h * 0.32, 0x7c3f58, 0.65);
+      const p = at("lounge", 0.83, 0.33);
+      box(p.x, p.z, 30, 58, 24, 0xdc2626);
+      box(p.x, p.z - 12.5, 20, 34, 1, 0x111827, 36, 0x38bdf8);
+    }
+    {
+      const r = room("toilet");
+      const p = at("toilet", 0.5, 0.82);
+      box(p.x, p.z, r.w * 0.42, 26, 24, 0xdbeafe);
+      for (const dx of [-36, 0, 36]) cylinder(p.x + dx, p.z - 13, 7, 4, 0x93c5fd, 31);
+    }
+    for (const id of ["work_a", "work_b"] as const) {
+      const p = at(id, 0.5, 0.82);
+      box(p.x, p.z, 58, 32, 30, 0xe2e8f0);
+      box(p.x, p.z - 16, 34, 8, 2, 0x1e293b, 25);
+      box(p.x + 38, p.z, 10, 42, 10, ROOM_VISUALS[id].accent);
+    }
+    {
+      const r = room("meeting");
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x8be7f4, transparent: true, opacity: 0.25, roughness: 0.15, metalness: 0.25 });
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(r.w * 0.68, 48, 3), glassMat);
+      glass.position.set(r.x + r.w * 0.5, 24, r.y + r.h * 0.18);
+      this.scene.add(glass);
+    }
+    {
+      const p = at("reception", 0.5, 0.72);
+      for (const dx of [-38, 0, 38]) {
+        cylinder(p.x + dx, p.z, 5, 28, 0x1e293b);
+        box(p.x + dx, p.z, 34, 3, 7, 0xfacc15, 22, 0xfacc15);
+      }
     }
   }
 
@@ -1946,6 +2049,27 @@ export class GameScreen implements Screen {
         dish.position.set(0, 40 * S, -5 * S);
         dish.rotation.x = Math.PI / 3;
         group.add(pedestal, screen, dish);
+        obj = group;
+        y = 0;
+      } else if (prop.kind === "exit-gate") {
+        const group = new THREE.Group();
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x172033, roughness: 0.55, metalness: 0.45 });
+        const statusMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.7 });
+        this.exitGateMaterials.push(statusMat);
+        const left = new THREE.Mesh(new THREE.BoxGeometry(8 * S, 52 * S, 10 * S), frameMat);
+        const right = left.clone();
+        left.position.set(-24 * S, 26 * S, 0);
+        right.position.set(24 * S, 26 * S, 0);
+        const header = new THREE.Mesh(new THREE.BoxGeometry(56 * S, 10 * S, 10 * S), frameMat);
+        header.position.y = 52 * S;
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(34 * S, 8 * S, 2 * S), statusMat);
+        sign.position.set(0, 52 * S, -6 * S);
+        const doorGlow = new THREE.Mesh(
+          new THREE.PlaneGeometry(38 * S, 42 * S),
+          new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.16, side: THREE.DoubleSide })
+        );
+        doorGlow.position.y = 25 * S;
+        group.add(left, right, header, sign, doorGlow);
         obj = group;
         y = 0;
       } else if (prop.kind === "window") {

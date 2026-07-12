@@ -344,3 +344,15 @@ git status
 - เพิ่ม countdown ขณะซ่อนและข้อความบอก cooldown เมื่อกลับมาใกล้จุดเดิม
 - เพิ่ม Trace Terminal cooldown ที่ Reception: แสดง `READY IN Ns` ใน SEEKER MISSION, แสดงเวลาบน interaction hint หน้าเครื่อง และแจ้งเวลาคงเหลือหากกดก่อนพร้อม
 - ตรวจ production build ของ client และ server ผ่านเรียบร้อย
+
+## Escape Objective, Hold Missions และ Room Landmarks
+
+- เปลี่ยน Mission จากกด E ครั้งเดียวเป็นกด E ค้าง 3 วินาที พร้อม progress bar ใน interaction hint
+- การปล่อย E หรือเดินออกจากระยะจะยกเลิก progress; server บันทึกเวลาเริ่มและตรวจระยะ/เวลาซ้ำก่อนยอมรับ Mission completion
+- ทำ Mission ครบ 3 จุดแล้วปลดล็อก EXIT ที่ Reception พร้อมประกาศให้ทั้งห้อง, สัญลักษณ์บน minimap และ checklist เปลี่ยนเป็น `EXIT OPEN`
+- เพิ่มประตู Clock-Out แบบ 3D: สถานะล็อกเป็นสีแดงและพร้อมหนีเป็นสีเขียว; Hider ไปกด SPACE ที่ประตูเพื่อ Escape และรับ 100 คะแนน
+- ผู้เล่นที่ Escape แล้วเข้าสถานะ spectator; ฝั่ง Hider ชนะเมื่อมีอย่างน้อยหนึ่งคน Escape ไม่ใช่เพียงรอเวลาให้หมด
+- Result screen แสดง `ESCAPED` ข้างชื่อผู้เล่นที่หนีสำเร็จ
+- อัปเดต Landing How to Play, Hider role copy และ Help panel ให้ตรงกติกา 10-second hide, personal cooldown, hold mission และ Reception exit
+- เพิ่ม landmark ขนาดใหญ่ประจำห้องโดยไม่เปลี่ยน collision: Server Core, Lounge rug/vending machine, Restroom vanity, Work Zone printer islands, Meeting glass wall และ Reception turnstiles
+- ตรวจ local gameplay render และ browser console ไม่พบ error; production build client/server ผ่าน
