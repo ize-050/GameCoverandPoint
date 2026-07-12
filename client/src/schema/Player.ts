@@ -15,6 +15,8 @@ export class Player extends Schema {
   @type("boolean") isEscaped: boolean = false;
   @type("number") score: number = 0;
   @type("boolean") isHost: boolean = false;
+  @type("boolean") isReady: boolean = false;
+  @type("boolean") isBot: boolean = false;
   @type("number") inspectsRemaining: number = 0;
   @type("boolean") speedBoosted: boolean = false;
   @type("boolean") hasSmokeBomb: boolean = false;

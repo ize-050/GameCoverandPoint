@@ -725,6 +725,9 @@ export class GameScreen implements Screen {
 
     room.onStateChange(this.stateChangeHandler);
     this.unsubs.push(() => room.onStateChange.remove(this.stateChangeHandler));
+    const roomLeaveHandler = () => this.navigate("Menu");
+    room.onLeave(roomLeaveHandler);
+    this.unsubs.push(() => room.onLeave.remove(roomLeaveHandler));
 
     // Self-correct immediately — a reconnect landing here mid-round shouldn't
     // wait for a future phase change that may never come.

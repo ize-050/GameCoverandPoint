@@ -32,12 +32,22 @@ export const DEFAULT_APPEARANCE: CharacterAppearance = {
 export interface CreateRoomOptions {
   nickname: string;
   appearance: CharacterAppearance;
+  visibility?: "public" | "private";
+  roomTitle?: string;
+  botCount?: number;
 }
 
 export interface JoinRoomOptions {
   nickname: string;
   code: string;
   appearance: CharacterAppearance;
+}
+
+export interface PublicRoomInfo {
+  roomId: string;
+  title: string;
+  playerCount: number;
+  maxPlayers: number;
 }
 
 // client -> server

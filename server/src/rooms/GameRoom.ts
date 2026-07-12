@@ -88,11 +88,19 @@ export class GameRoom extends Room<GameState> {
   private traceCooldownUntil = new Map<string, number>();
   private roundDecoyCoverPointIds = new Set<string>();
   private personalHideCooldownUntil = new Map<string, number>();
+  private botTargets = new Map<string, { x: number; y: number }>();
+  private isPublicRoom = false;
+  private roomTitle = "Public Office";
 
-  async onCreate(_options: CreateRoomOptions) {
+  async onCreate(options: CreateRoomOptions) {
     this.setState(new GameState());
+    this.isPublicRoom = options.visibility === "public";
+    this.roomTitle = String(options.roomTitle || "Public Office").slice(0, 28);
+    this.setPrivate(!this.isPublicRoom);
+    await this.setMetadata({ title: this.roomTitle, visibility: this.isPublicRoom ? "public" : "private", playerCount: 0, maxPlayers: GAME_CONFIG.MAX_PLAYERS, phase: "lobby" });
 
     const code = await this.generateUniqueCode();
+    this.roomId = code;
     this.state.roomCode = code;
     // filterBy(["code"]) matches against top-level listing fields (populated from
     // the room-creator's own options), not this.metadata — the code only exists
@@ -125,13 +133,21 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("completeMission", (client, message: { missionId?: string }) => this.handleCompleteMission(client, message));
     this.onMessage("startMission", (client, message: { missionId?: string }) => this.handleStartMission(client, message));
     this.onMessage("cancelMission", (client) => this.missionStartedAt.delete(client.sessionId));
+    this.onMessage("toggleReady", (client) => this.handleToggleReady(client));
+    this.onMessage("kickPlayer", (client, message: { playerId?: string }) => this.handleKickPlayer(client, message));
+    this.onMessage("addBot", (client) => this.handleAddBot(client));
+    this.onMessage("removeBot", (client) => this.handleRemoveBot(client));
 
     this.clock.setInterval(() => this.tick(), 1000);
+    this.clock.setInterval(() => this.tickBots(), 250);
+
+    this.addBots(Math.min(8, Math.max(0, Math.floor(Number(options.botCount) || 0))));
 
     console.log(`Room created: ${code}`);
   }
 
   private tick() {
+    this.checkAfkPlayers();
     if (this.state.phase === "lobby") return;
 
     if (this.state.phase === "seek") {
@@ -162,6 +178,153 @@ export class GameRoom extends Room<GameState> {
     const elapsed = GAME_CONFIG.SEEK_PHASE_SEC - this.state.timeRemaining;
     const cyclePos = ((elapsed % GAME_CONFIG.RELOCATE_INTERVAL_SEC) + GAME_CONFIG.RELOCATE_INTERVAL_SEC) % GAME_CONFIG.RELOCATE_INTERVAL_SEC;
     this.state.relocateActive = cyclePos < GAME_CONFIG.RELOCATE_WINDOW_SEC;
+  }
+
+  private updateListing() {
+    void this.setMetadata({
+      title: this.roomTitle,
+      playerCount: this.state.players.size,
+      maxPlayers: GAME_CONFIG.MAX_PLAYERS,
+      phase: this.state.phase,
+      visibility: this.isPublicRoom ? "public" : "private",
+    });
+  }
+
+  private addBots(count: number) {
+    for (let i = 0; i < count && this.state.players.size < GAME_CONFIG.MAX_PLAYERS; i++) {
+      const bot = new Player();
+      bot.id = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      bot.nickname = `Office Bot ${this.state.players.size + 1}`;
+      bot.isBot = true;
+      bot.isReady = true;
+      bot.characterVariant = CHARACTER_VARIANTS[Math.floor(Math.random() * CHARACTER_VARIANTS.length)];
+      const spawn = randomHiderSpawn();
+      bot.x = spawn.x;
+      bot.y = spawn.y;
+      this.state.players.set(bot.id, bot);
+    }
+    this.updateListing();
+  }
+
+  private handleAddBot(client: Client) {
+    if (this.state.phase !== "lobby" || !this.state.players.get(client.sessionId)?.isHost) return;
+    this.addBots(1);
+  }
+
+  private handleRemoveBot(client: Client) {
+    if (this.state.phase !== "lobby" || !this.state.players.get(client.sessionId)?.isHost) return;
+    const botId = [...this.state.players.values()].find((player) => player.isBot)?.id;
+    if (botId) this.state.players.delete(botId);
+    this.updateListing();
+  }
+
+  private handleToggleReady(client: Client) {
+    if (this.state.phase !== "lobby") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.isBot) return;
+    player.isReady = !player.isReady;
+    this.lastMoveAt.set(client.sessionId, Date.now());
+  }
+
+  private handleKickPlayer(client: Client, message: { playerId?: string }) {
+    const host = this.state.players.get(client.sessionId);
+    if (this.state.phase !== "lobby" || !host?.isHost || !message.playerId || message.playerId === client.sessionId) return;
+    const targetPlayer = this.state.players.get(message.playerId);
+    if (targetPlayer?.isBot) {
+      this.state.players.delete(message.playerId);
+      this.updateListing();
+      return;
+    }
+    const targetClient = this.clients.find((candidate) => candidate.sessionId === message.playerId);
+    targetClient?.leave(4001, "KICKED_BY_HOST");
+  }
+
+  private checkAfkPlayers() {
+    const now = Date.now();
+    for (const client of this.clients) {
+      if (now - (this.lastMoveAt.get(client.sessionId) ?? now) < GAME_CONFIG.AFK_TIMEOUT_MS) continue;
+      client.send("afkRemoved", {});
+      client.leave(4002, "AFK_TIMEOUT");
+    }
+  }
+
+  private tickBots() {
+    if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+    const dt = 0.25;
+    const bots = [...this.state.players.values()].filter((player) => player.isBot && !player.isCaught && !player.isEscaped);
+    for (const bot of bots) {
+      if (bot.role === "seeker" && this.state.phase === "hide") continue;
+      if (bot.isHidden) continue;
+
+      let target: { x: number; y: number } | undefined;
+      if (bot.role === "seeker") {
+        const exposed = [...this.state.players.values()]
+          .filter((player) => player.role === "hider" && !player.isCaught && !player.isEscaped && !player.isHidden)
+          .sort((a, b) => Math.hypot(bot.x - a.x, bot.y - a.y) - Math.hypot(bot.x - b.x, bot.y - b.y))[0];
+        if (exposed) {
+          target = exposed;
+          if (Math.hypot(bot.x - exposed.x, bot.y - exposed.y) <= GAME_CONFIG.TAG_RANGE_PX) {
+            this.resolveCatch(undefined, bot, exposed);
+            continue;
+          }
+        } else {
+          const occupied = [...this.coverOccupants.keys()][0];
+          const cp = occupied ? this.state.coverPoints.get(occupied) : undefined;
+          if (cp) {
+            target = cp;
+            if (Math.hypot(bot.x - cp.x, bot.y - cp.y) <= GAME_CONFIG.INSPECT_RANGE_PX) {
+              const hider = this.state.players.get(this.coverOccupants.get(cp.id) ?? "");
+              this.coverOccupants.delete(cp.id);
+              cp.isOccupied = false;
+              this.resolveCatch(undefined, bot, hider);
+              continue;
+            }
+          }
+        }
+      } else {
+        const nearby = [...this.state.coverPoints.values()].find((cp) =>
+          !cp.isOccupied && !this.roundDecoyCoverPointIds.has(cp.id) && Math.hypot(bot.x - cp.x, bot.y - cp.y) < GAME_CONFIG.HIDE_RANGE_PX
+        );
+        if (nearby && Math.random() < 0.18) {
+          nearby.isOccupied = true;
+          this.coverOccupants.set(nearby.id, bot.id);
+          bot.isHidden = true;
+          bot.coverPointId = nearby.id;
+          bot.hiddenUntil = Date.now() + GAME_CONFIG.HIDE_MAX_DURATION_MS;
+          this.clock.setTimeout(() => {
+            if (!bot.isHidden || bot.coverPointId !== nearby.id) return;
+            this.freeCoverPoint(nearby.id, bot.id);
+            bot.isHidden = false;
+            bot.coverPointId = "";
+            bot.hiddenUntil = 0;
+          }, GAME_CONFIG.HIDE_MAX_DURATION_MS);
+          continue;
+        }
+      }
+
+      if (!target) {
+        let roam = this.botTargets.get(bot.id);
+        if (!roam || Math.hypot(bot.x - roam.x, bot.y - roam.y) < 30) {
+          roam = randomHiderSpawn();
+          this.botTargets.set(bot.id, roam);
+        }
+        target = roam;
+      }
+      const dx = target.x - bot.x;
+      const dy = target.y - bot.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const speed = bot.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
+      const nextX = bot.x + (dx / distance) * Math.min(distance, speed * dt);
+      const nextY = bot.y + (dy / distance) * Math.min(distance, speed * dt);
+      if (!collidesWithAnyWall(nextX, nextY, 16)) {
+        bot.x = nextX;
+        bot.y = nextY;
+        bot.rotY = Math.atan2(dx, dy);
+        bot.anim = "walk";
+      } else {
+        this.botTargets.delete(bot.id);
+      }
+    }
   }
 
   private async generateUniqueCode(): Promise<string> {
@@ -202,6 +365,7 @@ export class GameRoom extends Room<GameState> {
     player.characterVariant = appearance.variant;
 
     this.state.players.set(client.sessionId, player);
+    this.updateListing();
   }
 
   private hasConnectedSeeker(): boolean {
@@ -251,6 +415,7 @@ export class GameRoom extends Room<GameState> {
     this.traceCooldownUntil.delete(client.sessionId);
 
     if (wasHost) this.migrateHost();
+    this.updateListing();
   }
 
   private handleEmote(client: Client, message: EmoteMessage) {
@@ -278,10 +443,13 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player?.isHost) return;
     if (this.state.players.size < GAME_CONFIG.MIN_PLAYERS) return;
+    const unreadyHuman = [...this.state.players.values()].some((candidate) => !candidate.isBot && !candidate.isHost && !candidate.isReady);
+    if (unreadyHuman) return;
 
     this.state.seekerCount = this.clampSeekerCount(message?.seekerCount);
     this.state.round += 1;
     this.beginRound();
+    this.updateListing();
   }
 
   private handleNextRound(client: Client) {
@@ -336,6 +504,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private beginRound() {
+    this.lock();
     this.assignRoles();
     this.firstCatchAwarded = false;
     this.coverOccupants.clear();
@@ -369,6 +538,7 @@ export class GameRoom extends Room<GameState> {
     shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND).forEach((mission) => this.state.missions.set(mission.id, false));
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
+    this.updateListing();
 
     this.clients.forEach((c) => {
       const player = this.state.players.get(c.sessionId);
@@ -414,6 +584,9 @@ export class GameRoom extends Room<GameState> {
   private beginLobby() {
     this.state.phase = "lobby";
     this.state.timeRemaining = 0;
+    this.state.players.forEach((player) => (player.isReady = player.isBot));
+    this.unlock();
+    this.updateListing();
   }
 
   private handleMove(client: Client, message: MoveMessage) {
@@ -679,7 +852,7 @@ export class GameRoom extends Room<GameState> {
   // undefined (matches the original inspect behavior: if the recorded
   // occupant somehow no longer exists in state, the seeker still gets the
   // score/message/end-round-check, just no hider-side mutation).
-  private resolveCatch(seekerClient: Client, seeker: Player, hider: Player | undefined) {
+  private resolveCatch(seekerClient: Client | undefined, seeker: Player, hider: Player | undefined) {
     if (hider) {
       hider.isHidden = false;
       hider.hiddenUntil = 0;
@@ -693,7 +866,7 @@ export class GameRoom extends Room<GameState> {
     const points = GAME_CONFIG.SCORE.CATCH + (this.firstCatchAwarded ? 0 : GAME_CONFIG.SCORE.FIRST_CATCH_BONUS);
     seeker.score += points;
     this.firstCatchAwarded = true;
-    seekerClient.send("catchSuccess", { targetNickname: hider?.nickname ?? "", points });
+    seekerClient?.send("catchSuccess", { targetNickname: hider?.nickname ?? "", points });
 
     const anyHiderLeft = [...this.state.players.values()].some((p) => p.role === "hider" && !p.isCaught);
     if (!anyHiderLeft) this.endRound(); // seeker caught everyone before time ran out

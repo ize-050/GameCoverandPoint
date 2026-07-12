@@ -356,3 +356,17 @@ git status
 - อัปเดต Landing How to Play, Hider role copy และ Help panel ให้ตรงกติกา 10-second hide, personal cooldown, hold mission และ Reception exit
 - เพิ่ม landmark ขนาดใหญ่ประจำห้องโดยไม่เปลี่ยน collision: Server Core, Lounge rug/vending machine, Restroom vanity, Work Zone printer islands, Meeting glass wall และ Reception turnstiles
 - ตรวจ local gameplay render และ browser console ไม่พบ error; production build client/server ผ่าน
+
+## Public Matchmaking, Ready Lobby และ Office Bots
+
+- เพิ่ม Quick Play: เข้าห้อง Public ที่มีผู้เล่นมากที่สุด หรือสร้าง Public room ใหม่อัตโนมัติเมื่อยังไม่มีห้อง
+- เพิ่ม Public/Private room ตอนสร้างห้อง; Private ไม่แสดงใน Room Browser และเข้าผ่านรหัส 4 ตัวเท่านั้น
+- เพิ่ม Public Room Browser พร้อมจำนวนผู้เล่นและปุ่ม Refresh/Join
+- ใช้รหัสห้อง 4 ตัวเป็น Colyseus room ID โดยตรง ทำให้ Private room ซ่อนจาก listing แต่ join ด้วย code ได้
+- เพิ่ม Ready button สำหรับผู้เล่นที่ไม่ใช่ Host; Host เริ่มเกมไม่ได้จนกว่าผู้เล่นจริงทุกคนจะ Ready
+- เพิ่ม Host Kick ใน Lobby และปุ่ม Add Bot / Remove Bot
+- เพิ่ม `PLAY WITH 3 BOTS` สำหรับสร้างห้องส่วนตัวพร้อม Bot ทันที เหมาะกับการเล่นหรือฝึกคนเดียว
+- Bot เป็น server-controlled player จริง: สุ่ม role/appearance, Hider เดินและใช้จุดซ่อน, Seeker ลาดตระเวน ไล่จับคนที่เปิดเผย และตรวจจุดซ่อนที่มีผู้เล่น
+- เพิ่ม AFK detection: ผู้เล่นจริงที่ไม่มีกิจกรรม 3 นาทีถูกนำออกจากห้องเพื่อคืนที่ว่าง
+- Room metadata อัปเดต visibility, phase และจำนวนผู้เล่นสำหรับ matchmaking/listing
+- ทดสอบ local ผ่าน Browser: solo room มี 3 Bots, เริ่มเกมได้, Quick Play สร้าง Public room, Room Browser พบ/Join ได้ และ Ready sync ข้ามสอง client สำเร็จ

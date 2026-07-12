@@ -1,6 +1,6 @@
 import { Client, Room } from "colyseus.js";
 import { GameState } from "../schema/GameState";
-import { JOIN_ERROR, type CharacterAppearance } from "../../../shared/messages";
+import { JOIN_ERROR, type CharacterAppearance, type PublicRoomInfo } from "../../../shared/messages";
 import { saveReconnectToken } from "./reconnect";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
@@ -23,9 +23,9 @@ function toJoinError(err: unknown): JoinError {
 export class NetworkManager {
   private client = new Client(SERVER_URL);
 
-  async createRoom(nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
+  async createRoom(nickname: string, appearance: CharacterAppearance, visibility: "public" | "private" = "private", botCount = 0): Promise<Room<GameState>> {
     try {
-      const room = await this.client.create<GameState>("game", { nickname, appearance });
+      const room = await this.client.create<GameState>("game", { nickname, appearance, visibility, botCount });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {
@@ -33,9 +33,37 @@ export class NetworkManager {
     }
   }
 
+  async listPublicRooms(): Promise<PublicRoomInfo[]> {
+    const rooms = await this.client.getAvailableRooms("game");
+    return rooms
+      .filter((room) => room.metadata?.visibility === "public" && Number(room.metadata?.playerCount ?? room.clients) < Number(room.metadata?.maxPlayers ?? 10))
+      .map((room) => ({
+        roomId: room.roomId,
+        title: String(room.metadata?.title ?? "Public Office"),
+        playerCount: Number(room.metadata?.playerCount ?? room.clients),
+        maxPlayers: Number(room.metadata?.maxPlayers ?? 10),
+      }));
+  }
+
+  async joinPublicRoom(roomId: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
+    try {
+      const room = await this.client.joinById<GameState>(roomId, { nickname, appearance });
+      saveReconnectToken(room.reconnectionToken);
+      return room;
+    } catch (err) {
+      throw toJoinError(err);
+    }
+  }
+
+  async quickPlay(nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
+    const rooms = await this.listPublicRooms();
+    if (rooms.length > 0) return this.joinPublicRoom(rooms.sort((a, b) => b.playerCount - a.playerCount)[0].roomId, nickname, appearance);
+    return this.createRoom(nickname, appearance, "public");
+  }
+
   async joinRoom(code: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
     try {
-      const room = await this.client.join<GameState>("game", { nickname, appearance, code: code.toUpperCase() });
+      const room = await this.client.joinById<GameState>(code.toUpperCase(), { nickname, appearance, code: code.toUpperCase() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {

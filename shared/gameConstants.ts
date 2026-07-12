@@ -1,5 +1,6 @@
 export const GAME_CONFIG = {
   MAX_PLAYERS: 10,
+  AFK_TIMEOUT_MS: 180000,
   // Solo test mode. Raise back to 4 before a production team-building session.
   MIN_PLAYERS: 1,
   HIDE_PHASE_SEC: 30,

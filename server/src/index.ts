@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "escape-missions-landmarks-v7",
+    release: "public-matchmaking-bots-v8",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

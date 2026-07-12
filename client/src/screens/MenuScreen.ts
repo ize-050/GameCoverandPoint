@@ -115,12 +115,16 @@ export class MenuScreen implements Screen {
         </section>
 
         <section id="play" class="landing-section play-section">
-          <div class="play-copy"><div class="section-kicker">READY TO CLOCK OUT?</div><h2>START YOUR<br/>ESCAPE PLAN.</h2><p>No download. Create a private room and invite your team instantly.</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
+          <div class="play-copy"><div class="section-kicker">READY TO CLOCK OUT?</div><h2>START YOUR<br/>ESCAPE PLAN.</h2><p>Quick Play, browse public rooms, invite friends with a private code, or practise with Office Bots.</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
           <div class="hns-panel play-panel">
             <div class="hns-label">YOUR NICKNAME</div><input id="nickname" class="hns-input" maxlength="12" placeholder="Nickname (max 12 characters)" value="${escapeHtml(savedNickname)}" />
             <div class="hns-label">CHOOSE YOUR EMPLOYEE</div><div class="variant-row"><button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button><span id="variantLabel">Employee 1</span><button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button></div>
+            <button id="quickBtn" class="hns-btn hns-btn-primary">⚡ QUICK PLAY</button>
+            <button id="botPlayBtn" class="hns-btn hns-btn-secondary">🤖 PLAY WITH 3 BOTS</button>
+            <div class="hns-label">CREATE ROOM</div><select id="visibility" class="hns-input"><option value="private">PRIVATE · ROOM CODE</option><option value="public">PUBLIC · ROOM BROWSER</option></select>
             <button id="createBtn" class="hns-btn hns-btn-primary">${icon("door", { size: 16 })} CREATE PRIVATE ROOM</button>
             <div class="join-divider"><span>OR JOIN A TEAM</span></div><div class="join-row"><input id="code" class="hns-input" maxlength="4" placeholder="ROOM CODE" /><button id="joinBtn" class="hns-btn hns-btn-secondary">${icon("key", { size: 16 })} JOIN</button></div>
+            <div class="join-divider"><span>PUBLIC ROOMS</span></div><button id="refreshRoomsBtn" class="hns-btn hns-btn-ghost">↻ REFRESH ROOMS</button><div id="publicRooms" style="display:flex;flex-direction:column;gap:7px;max-height:180px;overflow:auto;"></div>
             <div id="error" class="hns-error"></div>
           </div>
         </section>
@@ -163,6 +167,11 @@ export class MenuScreen implements Screen {
     const codeInput = root.querySelector("#code") as HTMLInputElement;
     const createBtn = root.querySelector("#createBtn") as HTMLButtonElement;
     const joinBtn = root.querySelector("#joinBtn") as HTMLButtonElement;
+    const quickBtn = root.querySelector("#quickBtn") as HTMLButtonElement;
+    const botPlayBtn = root.querySelector("#botPlayBtn") as HTMLButtonElement;
+    const visibilitySelect = root.querySelector("#visibility") as HTMLSelectElement;
+    const publicRoomsEl = root.querySelector("#publicRooms") as HTMLDivElement;
+    const refreshRoomsBtn = root.querySelector("#refreshRoomsBtn") as HTMLButtonElement;
     const errorEl = root.querySelector("#error") as HTMLDivElement;
     const variantLabelEl = root.querySelector("#variantLabel") as HTMLSpanElement;
     const variantPrevBtn = root.querySelector("#variantPrev") as HTMLButtonElement;
@@ -204,18 +213,60 @@ export class MenuScreen implements Screen {
       return value;
     };
 
+    const openRoom = (room: Awaited<ReturnType<NetworkManager["createRoom"]>>) => this.navigate("Lobby", { room });
+
+    const refreshRooms = async () => {
+      publicRoomsEl.innerHTML = `<div style="color:#94a3b8;font-size:12px;">Loading public rooms...</div>`;
+      try {
+        const rooms = await this.network.listPublicRooms();
+        publicRoomsEl.innerHTML = rooms.length ? rooms.map((room) =>
+          `<button class="hns-btn hns-btn-ghost" data-public-room="${room.roomId}" style="display:flex;justify-content:space-between;gap:10px;"><span>${escapeHtml(room.title)}</span><b>${room.playerCount}/${room.maxPlayers}</b></button>`
+        ).join("") : `<div style="color:#94a3b8;font-size:12px;">No public rooms yet. Quick Play will create one.</div>`;
+      } catch {
+        publicRoomsEl.innerHTML = `<div style="color:#fca5a5;font-size:12px;">Could not load public rooms.</div>`;
+      }
+    };
+
     createBtn.addEventListener("click", async () => {
       playUiClickSfx();
       showError("");
       createBtn.disabled = true;
       try {
-        const room = await this.network.createRoom(getNickname(), this.appearance);
-        this.navigate("Lobby", { room });
+        const visibility = visibilitySelect.value === "public" ? "public" : "private";
+        const room = await this.network.createRoom(getNickname(), this.appearance, visibility);
+        openRoom(room);
       } catch (err) {
         showError(this.describeError(err));
         createBtn.disabled = false;
       }
     });
+
+    quickBtn.addEventListener("click", async () => {
+      quickBtn.disabled = true;
+      showError("");
+      try { openRoom(await this.network.quickPlay(getNickname(), this.appearance)); }
+      catch (err) { showError(this.describeError(err)); quickBtn.disabled = false; }
+    });
+
+    botPlayBtn.addEventListener("click", async () => {
+      botPlayBtn.disabled = true;
+      showError("");
+      try { openRoom(await this.network.createRoom(getNickname(), this.appearance, "private", 3)); }
+      catch (err) { showError(this.describeError(err)); botPlayBtn.disabled = false; }
+    });
+
+    visibilitySelect.addEventListener("change", () => {
+      createBtn.textContent = visibilitySelect.value === "public" ? "CREATE PUBLIC ROOM" : "CREATE PRIVATE ROOM";
+    });
+    refreshRoomsBtn.addEventListener("click", () => void refreshRooms());
+    publicRoomsEl.addEventListener("click", async (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-public-room]");
+      if (!button?.dataset.publicRoom) return;
+      button.disabled = true;
+      try { openRoom(await this.network.joinPublicRoom(button.dataset.publicRoom, getNickname(), this.appearance)); }
+      catch (err) { showError(this.describeError(err)); button.disabled = false; }
+    });
+    void refreshRooms();
 
     joinBtn.addEventListener("click", async () => {
       playUiClickSfx();
