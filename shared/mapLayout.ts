@@ -504,16 +504,28 @@ function tooCloseToCoverPoint(x: number, y: number): boolean {
   return COVER_POINTS.some((cp) => Math.hypot(cp.x - x, cp.y - y) < REAL_MODEL_DECO_CLEARANCE_PX);
 }
 
-export const DECORATIONS: DecorationDef[] = [
-  ...scatter("plant-small", 80, 7, MAP_WIDTH, MAP_HEIGHT),
-  ...scatter("bin", 44, 41, MAP_WIDTH, MAP_HEIGHT),
-  ...scatter("papers", 60, 113, MAP_WIDTH, MAP_HEIGHT),
-  // Real-model clutter (Among Us-style messy office feel) — moved boxes and
-  // coat racks scattered around, on top of the existing flat-sprite scatter.
-  ...scatter("cardboard-box", 30, 271, MAP_WIDTH, MAP_HEIGHT),
-  ...scatter("coat-rack", 14, 389, MAP_WIDTH, MAP_HEIGHT),
-]
-  .filter((d) => !collidesWithAnyWall(d.x, d.y, 60))
+// Curated office clusters. Previous versions scattered hundreds of objects
+// uniformly across the full map, which read as random noise while still
+// leaving the important work areas compositionally empty.
+const CURATED_ROOM_DECOR: Array<{ roomId: string; kind: DecorationKind; fx: number; fy: number }> = [
+  { roomId: "server", kind: "cardboard-box", fx: .16, fy: .78 }, { roomId: "server", kind: "bin", fx: .82, fy: .78 },
+  { roomId: "server", kind: "papers", fx: .5, fy: .72 }, { roomId: "lounge", kind: "plant-small", fx: .12, fy: .2 },
+  { roomId: "lounge", kind: "plant-small", fx: .88, fy: .2 }, { roomId: "lounge", kind: "bin", fx: .86, fy: .8 },
+  { roomId: "toilet", kind: "bin", fx: .18, fy: .82 }, { roomId: "toilet", kind: "plant-small", fx: .82, fy: .82 },
+  { roomId: "work_a", kind: "coat-rack", fx: .1, fy: .18 }, { roomId: "work_a", kind: "bin", fx: .9, fy: .18 },
+  { roomId: "work_a", kind: "papers", fx: .25, fy: .52 }, { roomId: "work_a", kind: "papers", fx: .73, fy: .52 },
+  { roomId: "meeting", kind: "plant-small", fx: .12, fy: .18 }, { roomId: "meeting", kind: "plant-small", fx: .88, fy: .18 },
+  { roomId: "meeting", kind: "papers", fx: .5, fy: .57 }, { roomId: "work_b", kind: "coat-rack", fx: .1, fy: .18 },
+  { roomId: "work_b", kind: "bin", fx: .9, fy: .18 }, { roomId: "work_b", kind: "papers", fx: .25, fy: .52 },
+  { roomId: "work_b", kind: "papers", fx: .73, fy: .52 }, { roomId: "reception", kind: "plant-small", fx: .12, fy: .2 },
+  { roomId: "reception", kind: "plant-small", fx: .88, fy: .2 }, { roomId: "reception", kind: "cardboard-box", fx: .84, fy: .78 },
+  { roomId: "reception", kind: "coat-rack", fx: .16, fy: .78 },
+];
+
+export const DECORATIONS: DecorationDef[] = CURATED_ROOM_DECOR.map((item) => {
+  const room = ROOMS.find((candidate) => candidate.id === item.roomId)!;
+  return { kind: item.kind, x: room.x + room.w * item.fx, y: room.y + room.h * item.fy };
+}).filter((d) => !collidesWithAnyWall(d.x, d.y, 18))
   .filter((d) => (d.kind === "cardboard-box" || d.kind === "coat-rack" ? !tooCloseToCoverPoint(d.x, d.y) : true));
 
 // One or more physical props per room — gives every room its own identity,

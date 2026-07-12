@@ -35,8 +35,6 @@ import { MISSION_POOL, MISSIONS_PER_ROUND, MISSION_SCORE, ALL_MISSIONS_BONUS } f
 // hide anyone — computed once from the shared map data rather than kept in
 // schema, since @colyseus/schema syncs whatever fields exist and this must
 // never reach clients (would give away decoys instantly).
-const DECOY_COVER_POINT_IDS = new Set(COVER_POINTS.filter((cp) => cp.isDecoy).map((cp) => cp.id));
-
 function shuffled<T>(arr: T[]): T[] {
   return arr
     .map((item) => ({ item, r: Math.random() }))
@@ -87,6 +85,8 @@ export class GameRoom extends Room<GameState> {
   private missionCooldownUntil = new Map<string, number>();
   private scanCooldownUntil = new Map<string, number>();
   private traceCooldownUntil = new Map<string, number>();
+  private roundDecoyCoverPointIds = new Set<string>();
+  private personalHideCooldownUntil = new Map<string, number>();
 
   async onCreate(_options: CreateRoomOptions) {
     this.setState(new GameState());
@@ -316,6 +316,7 @@ export class GameRoom extends Room<GameState> {
       player.role = seekerSet.has(id) ? "seeker" : "hider";
       player.isCaught = false;
       player.isHidden = false;
+      player.hiddenUntil = 0;
       player.coverPointId = "";
       player.inspectsRemaining = seekerSet.has(id) ? GAME_CONFIG.MAX_INSPECT_ATTEMPTS : 0;
       player.speedBoosted = false;
@@ -345,6 +346,13 @@ export class GameRoom extends Room<GameState> {
     this.missionCooldownUntil.clear();
     this.scanCooldownUntil.clear();
     this.traceCooldownUntil.clear();
+    this.personalHideCooldownUntil.clear();
+    // Furniture stays coherent with the office, but which pieces are genuine
+    // cover changes every round. The remainder behave as indistinguishable
+    // decoys, so memorising last round's answers does not help.
+    this.roundDecoyCoverPointIds = new Set(
+      shuffled(COVER_POINTS).slice(0, Math.floor(COVER_POINTS.length * 0.32)).map((cp) => cp.id)
+    );
     this.stunTraps = [];
     this.survivalMilestones.clear();
     this.state.relocateActive = false;
@@ -559,18 +567,33 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     const cp = this.state.coverPoints.get(message.coverPointId);
     if (!player || !cp) return;
-    if (DECOY_COVER_POINT_IDS.has(cp.id)) return; // looks real, never actually usable
+    if (this.roundDecoyCoverPointIds.has(cp.id)) {
+      client.send("hideUnavailable", { coverPointId: cp.id });
+      return; // randomised each round
+    }
     if (player.role !== "hider" || player.isCaught || player.isHidden) return;
     if (cp.isOccupied) return; // spec 2.3: 1 point, 1 person
     if (Math.hypot(player.x - cp.x, player.y - cp.y) > GAME_CONFIG.HIDE_RANGE_PX) return;
+    const cooldownKey = `${client.sessionId}:${cp.id}`;
+    const cooldownRemaining = (this.personalHideCooldownUntil.get(cooldownKey) ?? 0) - Date.now();
+    if (cooldownRemaining > 0) {
+      client.send("hideCooldown", { coverPointId: cp.id, remainingMs: cooldownRemaining });
+      return;
+    }
 
     cp.isOccupied = true;
     this.coverOccupants.set(cp.id, client.sessionId);
     player.isHidden = true;
     player.coverPointId = cp.id;
+    player.hiddenUntil = Date.now() + GAME_CONFIG.HIDE_MAX_DURATION_MS;
     player.x = cp.x;
     player.y = cp.y;
     if (this.state.relocateActive) player.score += GAME_CONFIG.SCORE.RELOCATE_BONUS;
+    this.clock.setTimeout(() => {
+      const current = this.state.players.get(client.sessionId);
+      if (!current?.isHidden || current.coverPointId !== cp.id) return;
+      this.releaseHiddenPlayer(client, current, true);
+    }, GAME_CONFIG.HIDE_MAX_DURATION_MS);
   }
 
   private handleUnhide(client: Client) {
@@ -579,9 +602,20 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isHidden) return;
 
-    this.freeCoverPoint(player.coverPointId, client.sessionId);
+    this.releaseHiddenPlayer(client, player, false);
+  }
+
+  private releaseHiddenPlayer(client: Client, player: Player, expired: boolean) {
+    const coverPointId = player.coverPointId;
+    this.freeCoverPoint(coverPointId, client.sessionId);
+    if (coverPointId) this.personalHideCooldownUntil.set(`${client.sessionId}:${coverPointId}`, Date.now() + GAME_CONFIG.HIDE_SPOT_COOLDOWN_MS);
     player.isHidden = false;
+    player.hiddenUntil = 0;
     player.coverPointId = "";
+    client.send(expired ? "hideExpired" : "hideCooldown", {
+      coverPointId,
+      remainingMs: GAME_CONFIG.HIDE_SPOT_COOLDOWN_MS,
+    });
   }
 
   private handleInspect(client: Client, message: CoverPointMessage) {
@@ -625,6 +659,7 @@ export class GameRoom extends Room<GameState> {
   private resolveCatch(seekerClient: Client, seeker: Player, hider: Player | undefined) {
     if (hider) {
       hider.isHidden = false;
+      hider.hiddenUntil = 0;
       hider.isCaught = true;
       hider.coverPointId = "";
       this.clients.forEach((c) => {
@@ -753,8 +788,13 @@ export class GameRoom extends Room<GameState> {
   private triggerTraceTerminal(client: Client, player: Player) {
     if (player.role !== "seeker") return;
     const now = Date.now();
-    if (now < (this.traceCooldownUntil.get(client.sessionId) ?? 0)) return;
+    const remainingMs = (this.traceCooldownUntil.get(client.sessionId) ?? 0) - now;
+    if (remainingMs > 0) {
+      client.send("traceCooldown", { remainingMs });
+      return;
+    }
     this.traceCooldownUntil.set(client.sessionId, now + GAME_CONFIG.TRACE_COOLDOWN_MS);
+    client.send("traceCooldown", { remainingMs: GAME_CONFIG.TRACE_COOLDOWN_MS });
 
     const points: { x: number; y: number }[] = [];
     this.state.players.forEach((hider) => {

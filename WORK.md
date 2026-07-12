@@ -334,3 +334,13 @@ git status
 - สาเหตุคือ Hider และ Seeker ใช้ HUD element เดียวกัน แต่โค้ดเรียก `setSeekerMission(false)` หลังวาดรายการ Hider ทุกเฟรม จึงซ่อน panel ทันที
 - เปลี่ยนการอัปเดตเป็น mutually exclusive ตาม role: Seeker วาด objective ของ Seeker ส่วน Hider วาด checklist ภารกิจที่สุ่มมาในรอบนั้น
 - Hider ที่ถูกจับแล้วจะไม่เห็น checklist และไม่มีผลต่อ logic การทำภารกิจเดิม
+
+## Round Variety, Timed Hiding และ Office Cleanup
+
+- สุ่มจุดซ่อนจริง/จุดหลอกใหม่ทุกตาจากเฟอร์นิเจอร์ใน office ชุดเดิม ผู้เล่นจึงจำคำตอบจากรอบก่อนไม่ได้ แต่ภาพและ collision ยังตรงกับเฟอร์นิเจอร์
+- เปลี่ยนของตกแต่งจาก procedural scatter หลายร้อยชิ้นทั่วแผนที่ เป็น curated clusters ตามประเภทห้อง เช่น เอกสารใกล้โต๊ะทำงาน ต้นไม้ตามมุม lounge/reception และกล่องใน server/reception
+- จำกัดเวลาซ่อนต่อครั้งไว้ 10 วินาที จากนั้น server บังคับออกจากที่ซ่อนอัตโนมัติ
+- หลังออก จุดเดิมติด cooldown 12 วินาทีเฉพาะผู้เล่นคนนั้น ผู้เล่นคนอื่นยังใช้จุดนั้นได้ตามปกติ
+- เพิ่ม countdown ขณะซ่อนและข้อความบอก cooldown เมื่อกลับมาใกล้จุดเดิม
+- เพิ่ม Trace Terminal cooldown ที่ Reception: แสดง `READY IN Ns` ใน SEEKER MISSION, แสดงเวลาบน interaction hint หน้าเครื่อง และแจ้งเวลาคงเหลือหากกดก่อนพร้อม
+- ตรวจ production build ของ client และ server ผ่านเรียบร้อย

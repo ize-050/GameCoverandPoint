@@ -9,6 +9,7 @@ export class Player extends Schema {
   @type("string") anim: string = "idle";
   @type("number") rotY: number = 0;
   @type("boolean") isHidden: boolean = false;
+  @type("number") hiddenUntil: number = 0;
   @type("string") coverPointId: string = "";
   @type("boolean") isCaught: boolean = false;
   @type("number") score: number = 0;

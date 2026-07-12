@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "hider-mission-hud-v5",
+    release: "round-rules-office-v6",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

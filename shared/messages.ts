@@ -84,6 +84,11 @@ export interface InspectMissMessage {
   cooldownMs: number;
 }
 
+export interface CooldownMessage {
+  remainingMs: number;
+  coverPointId?: string;
+}
+
 // server -> all clients (broadcast)
 export interface EmoteBroadcastMessage {
   sessionId: string;

@@ -25,6 +25,7 @@ export class Player extends Schema {
   @type("string") anim: string = "idle";
   @type("number") rotY: number = 0;
   @type("boolean") isHidden: boolean = false;
+  @type("number") hiddenUntil: number = 0;
   // Which cover point you're at would reveal your exact position just as much
   // as x/y would (it's a lookup into a publicly-known list of coordinates).
   @filter(positionFilter) @type("string") coverPointId: string = "";

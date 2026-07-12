@@ -35,6 +35,7 @@ import type {
   RevealPingMessage,
   ItemPickedMessage,
   TrapMessage,
+  CooldownMessage,
 } from "../../../shared/messages";
 import { MISSION_POOL } from "../../../shared/missions";
 import {
@@ -209,6 +210,8 @@ export class GameScreen implements Screen {
   // timer only, matching the world-space shadow reveal's same approach.
   private traceRevealUntil = 0;
   private traceRevealPoints: { x: number; y: number }[] = [];
+  private traceCooldownUntil = 0;
+  private personalHideCooldowns = new Map<string, number>();
   // Client-predicted scan cooldown/origin — the server enforces the real
   // cooldown independently (see handleScanPulse), this is only so the HUD
   // can show a countdown and the radius ring can be drawn without waiting
@@ -471,7 +474,8 @@ export class GameScreen implements Screen {
     // setters every frame meant setSeekerMission(false) immediately hid the
     // hider checklist that setMissions had just rendered.
     if (showSeekerMission) {
-      this.hud.setSeekerMission(true);
+      const traceRemainingSec = Math.ceil(Math.max(0, this.traceCooldownUntil - performance.now()) / 1000);
+      this.hud.setSeekerMission(true, traceRemainingSec);
     } else {
       this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions);
     }
@@ -625,6 +629,23 @@ export class GameScreen implements Screen {
       this.hud?.showFeedback(`${icon("target", { size: 18, color: "#facc15" })} เทรซสัญญาณสำเร็จ! เห็นตำแหน่งคนซ่อน ${msg.points.length} คน`);
     });
     this.unsubs.push(offTraceReveal);
+
+    const offTraceCooldown = room.onMessage("traceCooldown", (msg: CooldownMessage) => {
+      this.traceCooldownUntil = performance.now() + Math.max(0, msg.remainingMs);
+      if (msg.remainingMs > 0 && msg.remainingMs < GAME_CONFIG.TRACE_COOLDOWN_MS)
+        this.hud?.showFeedback(`Trace Terminal พร้อมอีก ${Math.ceil(msg.remainingMs / 1000)} วิ`);
+    });
+    const offHideCooldown = room.onMessage("hideCooldown", (msg: CooldownMessage) => {
+      if (msg.coverPointId) this.personalHideCooldowns.set(msg.coverPointId, performance.now() + msg.remainingMs);
+    });
+    const offHideExpired = room.onMessage("hideExpired", (msg: CooldownMessage) => {
+      if (msg.coverPointId) this.personalHideCooldowns.set(msg.coverPointId, performance.now() + msg.remainingMs);
+      this.hud?.showFeedback(`ออกจากที่ซ่อนอัตโนมัติ — จุดนี้พัก ${Math.ceil(msg.remainingMs / 1000)} วิสำหรับคุณ`);
+    });
+    const offHideUnavailable = room.onMessage("hideUnavailable", () => {
+      this.hud?.showFeedback("เฟอร์นิเจอร์ชิ้นนี้ไม่ใช่จุดซ่อนในรอบนี้ — ลองจุดอื่น");
+    });
+    this.unsubs.push(offTraceCooldown, offHideCooldown, offHideExpired, offHideUnavailable);
 
     const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
       const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
@@ -1063,7 +1084,10 @@ export class GameScreen implements Screen {
     if (!me || me.isCaught || !this.localPlayer) return null;
     if (phase !== "hide" && phase !== "seek") return null;
 
-    if (me.role === "hider" && me.isHidden) return "[SPACE] ออกจากที่ซ่อน";
+    if (me.role === "hider" && me.isHidden) {
+      const seconds = Math.max(0, Math.ceil((me.hiddenUntil - Date.now()) / 1000));
+      return `[SPACE] ออกจากที่ซ่อน · ออกอัตโนมัติใน ${seconds} วิ`;
+    }
 
     const lightSwitch = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, LIGHT_SWITCH_KIND);
     if (lightSwitch) return propHintText(lightSwitch.kind);
@@ -1079,13 +1103,18 @@ export class GameScreen implements Screen {
       if (me.heldItem) return "[Q] ใช้ไอเท็มที่ถืออยู่";
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
       if (!cp) return null;
+      const hideCooldownSec = Math.ceil(Math.max(0, (this.personalHideCooldowns.get(cp.id) ?? 0) - performance.now()) / 1000);
+      if (hideCooldownSec > 0) return `จุดนี้พร้อมสำหรับคุณอีก ${hideCooldownSec} วิ`;
       return cp.isOccupied ? "จุดนี้มีคนซ่อนอยู่แล้ว" : "[SPACE] ซ่อนที่นี่";
     }
 
     if (me.role === "seeker") {
       if (this.findNearestExposedHider(GAME_CONFIG.TAG_RANGE_PX)) return "[SPACE] จับ!";
       const trace = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, TRACE_TERMINAL_KIND);
-      if (trace) return propHintText(trace.kind);
+      if (trace) {
+        const seconds = Math.ceil(Math.max(0, this.traceCooldownUntil - performance.now()) / 1000);
+        return seconds > 0 ? `Trace Terminal พร้อมอีก ${seconds} วิ` : propHintText(trace.kind);
+      }
       const cp = this.findNearestCoverPoint(GAME_CONFIG.INSPECT_RANGE_PX);
       if (cp) return me.inspectsRemaining > 0 ? "[SPACE] ตรวจจุดนี้" : `${icon("blocked", { size: 14 })} หมดโควตาตรวจแล้ว`;
       // Fallback reminder — scan has no fixed location (unlike trace
@@ -1144,6 +1173,7 @@ export class GameScreen implements Screen {
       }
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
       if (cp && !cp.isOccupied) {
+        if ((this.personalHideCooldowns.get(cp.id) ?? 0) > performance.now()) return;
         this.room?.send("hide", { coverPointId: cp.id });
         if (this.room?.state.relocateActive)
           this.hud?.showFeedback(`${icon("check", { size: 18 })} ย้ายที่ซ่อนสำเร็จ! +${GAME_CONFIG.SCORE.RELOCATE_BONUS}`);

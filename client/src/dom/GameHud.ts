@@ -216,13 +216,13 @@ export class GameHud {
   // Seeker's equivalent of the hider mission panel — reuses the same corner
   // slot (the two roles never see it at the same time) since there's just
   // one repeatable objective, not a checklist.
-  setSeekerMission(visible: boolean) {
+  setSeekerMission(visible: boolean, traceCooldownSec = 0) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
     this.missionsEl.innerHTML =
       `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">SEEKER MISSION</div>` +
       `<div style="color:#94a3b8;margin-bottom:7px;">Hiders cannot see this.</div>` +
-      `<div style="margin:4px 0;color:#e2e8f0;">◆ Reach the Trace Terminal (Reception) and press SPACE — reveals every hider for 10s</div>` +
+      `<div style="margin:4px 0;color:${traceCooldownSec > 0 ? "#94a3b8" : "#e2e8f0"};">◆ Trace Terminal (Reception): ${traceCooldownSec > 0 ? `READY IN ${traceCooldownSec}s` : "READY — press SPACE to reveal hiders for 10s"}</div>` +
       `<div style="margin:8px 0 4px;color:#e2e8f0;">F — Scan nearby hidden hiders (15s cooldown)</div>`;
   }
 
