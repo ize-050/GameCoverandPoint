@@ -1,26 +1,23 @@
-// Procedurally generated background music — same "no external audio files"
-// approach as sfx.ts, using a lookahead scheduler (the standard technique
-// for reliable Web Audio timing, avoiding setTimeout jitter) to loop a soft
-// pad + arpeggio over a 4-chord progression. Reacts to game phase: calmer
-// in menu/lobby/hide, subtly faster and brighter during the "seek" chase.
+// Playful corporate-heist score for Clock Out Protocol. Everything is
+// synthesized with Web Audio: muted-office plucks, clock/keyboard percussion,
+// a sneaky bass line and elevator-style chimes. The same motif accelerates
+// and becomes more urgent during SEEK, so transitions feel musical rather
+// than switching to an unrelated track.
 
 import { getAudioContext } from "./sfx";
 
 export type MusicMood = "calm" | "tense" | "urgent";
 
-// Am - F - C - G, a gentle, slightly wistful loop that doesn't get tiring
-// on repeat — notes as Hz (root, third, fifth of each chord).
-const CHORDS_HZ: number[][] = [
-  [220.0, 261.63, 329.63], // Am
-  [174.61, 220.0, 261.63], // F
-  [130.81, 164.81, 196.0], // C
-  [196.0, 246.94, 293.66], // G
+// Dm - Bb - F - C: playful spy/heist colour without sounding too dark.
+const CHORDS = [
+  [146.83, 174.61, 220.0],
+  [116.54, 146.83, 174.61],
+  [174.61, 220.0, 261.63],
+  [130.81, 164.81, 196.0],
 ];
-const ARP_PATTERN = [0, 1, 2, 1]; // indices into a chord's note list, up-down
-
-const BASE_STEP_SEC = 0.42; // one arpeggio note; 4 steps per chord
+const PLUCK_PATTERN = [0, 2, 1, 2, 0, 1, 2, 1];
 const LOOKAHEAD_SEC = 0.2;
-const SCHEDULER_INTERVAL_MS = 50;
+const SCHEDULER_INTERVAL_MS = 40;
 
 class MusicPlayer {
   private ctx: AudioContext | null = null;
@@ -29,8 +26,7 @@ class MusicPlayer {
   private muted = false;
   private running = false;
   private nextStepTime = 0;
-  private chordIndex = 0;
-  private stepIndex = 0;
+  private step = 0;
   private timerId: ReturnType<typeof setTimeout> | null = null;
 
   start() {
@@ -38,22 +34,18 @@ class MusicPlayer {
     const ctx = getAudioContext();
     if (!ctx) return;
     this.ctx = ctx;
-
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.value = this.muted ? 0 : 0.16;
+    this.masterGain.gain.value = this.muted ? 0 : 0.13;
     this.masterGain.connect(ctx.destination);
-
     this.running = true;
-    this.nextStepTime = ctx.currentTime + 0.1;
+    this.nextStepTime = ctx.currentTime + 0.08;
     this.schedule();
   }
 
   stop() {
     this.running = false;
-    if (this.timerId !== null) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
+    if (this.timerId !== null) clearTimeout(this.timerId);
+    this.timerId = null;
     this.masterGain?.disconnect();
     this.masterGain = null;
   }
@@ -61,94 +53,117 @@ class MusicPlayer {
   setMood(mood: MusicMood) {
     if (this.mood === mood) return;
     this.mood = mood;
-    if (this.masterGain && !this.muted && this.ctx) {
-      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.masterGain.gain.linearRampToValueAtTime(mood === "urgent" ? 0.19 : 0.16, this.ctx.currentTime + 0.45);
+    if (this.masterGain && this.ctx && !this.muted) {
+      const now = this.ctx.currentTime;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.linearRampToValueAtTime(mood === "urgent" ? 0.155 : mood === "tense" ? 0.142 : 0.13, now + 0.35);
     }
   }
 
   setMuted(muted: boolean) {
     this.muted = muted;
-    if (this.masterGain) this.masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.16, (this.ctx?.currentTime ?? 0) + 0.15);
+    if (this.masterGain && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.13, now + 0.12);
+    }
   }
 
-  isMuted() {
-    return this.muted;
-  }
+  isMuted() { return this.muted; }
+
+  private bpm() { return this.mood === "urgent" ? 158 : this.mood === "tense" ? 132 : 108; }
 
   private schedule = () => {
     if (!this.running || !this.ctx) return;
     while (this.nextStepTime < this.ctx.currentTime + LOOKAHEAD_SEC) {
-      this.playStep(this.nextStepTime);
-      const tempoScale = this.mood === "urgent" ? 0.48 : this.mood === "tense" ? 0.72 : 1;
-      this.nextStepTime += BASE_STEP_SEC * tempoScale;
+      this.playStep(this.nextStepTime, this.step);
+      this.nextStepTime += 60 / this.bpm() / 2; // eighth notes
+      this.step = (this.step + 1) % 32;
     }
     this.timerId = setTimeout(this.schedule, SCHEDULER_INTERVAL_MS);
   };
 
-  private playStep(time: number) {
-    const chord = CHORDS_HZ[this.chordIndex];
+  private playStep(time: number, step: number) {
+    const chordIndex = Math.floor(step / 8) % CHORDS.length;
+    const chord = CHORDS[chordIndex];
+    const local = step % 8;
 
-    if (this.stepIndex === 0) this.playPad(chord, time);
+    if (local === 0) this.playSoftChord(chord, time);
+    if (local === 0 || local === 4 || (this.mood !== "calm" && local === 6)) this.playBass(chord[0] / 2, time, local === 0);
+    this.playOfficePluck(chord[PLUCK_PATTERN[local]] * 2, time, local % 2 === 0);
 
-    const noteFreq = chord[ARP_PATTERN[this.stepIndex % ARP_PATTERN.length]] * 2; // one octave up from the pad
-    this.playArpNote(noteFreq, time);
-    if (this.mood === "urgent") this.playUrgentPulse(time, this.stepIndex % 2 === 0);
-
-    this.stepIndex++;
-    if (this.stepIndex >= ARP_PATTERN.length) {
-      this.stepIndex = 0;
-      this.chordIndex = (this.chordIndex + 1) % CHORDS_HZ.length;
-    }
+    // Clock ticks are the office identity; SEEK adds keyboard clacks between
+    // them and URGENT adds a low printer-like thump on every beat.
+    this.playClockTick(time, local % 2 === 0);
+    if (this.mood !== "calm" && local % 2 === 1) this.playKeyboardClack(time);
+    if (this.mood === "urgent" && local % 2 === 0) this.playUrgentThump(time, local === 0 || local === 4);
+    if (local === 7 && (chordIndex === 1 || chordIndex === 3)) this.playElevatorChime(chord[2] * 2, time);
   }
 
-  private playPad(chordFreqs: number[], time: number) {
-    const ctx = this.ctx!;
-    const tempoScale = this.mood === "urgent" ? 0.48 : this.mood === "tense" ? 0.72 : 1;
-    const dur = BASE_STEP_SEC * ARP_PATTERN.length * tempoScale * 1.05;
-    chordFreqs.forEach((freq) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      osc.connect(gain).connect(this.masterGain!);
-      gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.5, time + 0.4);
-      gain.gain.linearRampToValueAtTime(0, time + dur);
-      osc.start(time);
-      osc.stop(time + dur + 0.05);
-    });
-  }
-
-  private playArpNote(freq: number, time: number) {
+  private tone(freq: number, time: number, duration: number, peak: number, type: OscillatorType, attack = 0.008, filterHz?: number) {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = this.mood === "urgent" ? "square" : this.mood === "tense" ? "triangle" : "sine";
-    osc.frequency.value = freq;
-    osc.connect(gain).connect(this.masterGain!);
-    const dur = 0.5;
-    const peak = this.mood === "urgent" ? 0.16 : this.mood === "tense" ? 0.22 : 0.14;
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(peak, time + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, time);
+    let destination: AudioNode = gain;
+    if (filterHz) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = filterHz;
+      osc.connect(filter).connect(gain);
+      destination = filter;
+    }
+    if (!filterHz) osc.connect(gain);
+    gain.connect(this.masterGain!);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(peak, time + attack);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
     osc.start(time);
-    osc.stop(time + dur + 0.02);
+    osc.stop(time + duration + 0.02);
+    void destination;
   }
 
-  private playUrgentPulse(time: number, strong: boolean) {
+  private playSoftChord(chord: number[], time: number) {
+    const duration = (60 / this.bpm()) * 3.8;
+    chord.forEach((freq, index) => this.tone(freq, time, duration, 0.12 - index * 0.015, "triangle", 0.18, 900));
+  }
+
+  private playBass(freq: number, time: number, strong: boolean) {
+    this.tone(freq, time, 0.34, strong ? 0.34 : 0.24, "triangle", 0.01, 420);
+  }
+
+  private playOfficePluck(freq: number, time: number, accented: boolean) {
+    const type: OscillatorType = this.mood === "urgent" ? "square" : "triangle";
+    this.tone(freq, time, 0.16, accented ? 0.14 : 0.085, type, 0.004, this.mood === "urgent" ? 1500 : 1100);
+  }
+
+  private playClockTick(time: number, strong: boolean) {
+    this.tone(strong ? 1850 : 1320, time, 0.035, strong ? 0.11 : 0.065, "square", 0.002, 2400);
+  }
+
+  private playKeyboardClack(time: number) {
+    this.tone(520, time, 0.045, 0.08, "square", 0.002, 850);
+  }
+
+  private playUrgentThump(time: number, strong: boolean) {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(strong ? 92 : 116, time);
-    osc.frequency.exponentialRampToValueAtTime(58, time + 0.12);
+    osc.frequency.setValueAtTime(strong ? 105 : 82, time);
+    osc.frequency.exponentialRampToValueAtTime(48, time + 0.11);
     osc.connect(gain).connect(this.masterGain!);
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(strong ? 0.32 : 0.2, time + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.16);
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.3 : 0.2, time + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
     osc.start(time);
-    osc.stop(time + 0.18);
+    osc.stop(time + 0.16);
+  }
+
+  private playElevatorChime(freq: number, time: number) {
+    this.tone(freq, time, 0.42, 0.11, "sine", 0.012);
+    this.tone(freq * 1.25, time + 0.07, 0.38, 0.08, "sine", 0.012);
   }
 }
 

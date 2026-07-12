@@ -391,3 +391,15 @@ git status
 - เมื่อ Hider ถูกจับหรือ Escape กล้องเปลี่ยนไปผู้รอดอัตโนมัติ; กด C สลับผู้รอดและย้ายเป้าหมายเองเมื่อคนที่ดูถูกจับ
 - ปรับปุ่มเสียงให้เห็นชัดและอยู่เหนือหน้า Landing; ปิดทั้ง Music/SFX และจำสถานะด้วย localStorage
 - ตรวจ build client/server ผ่าน และทดสอบ server flow จริงยืนยัน SEEK มี `missionGoal=4`, `activeCount=2`, `matchRound=1/3`
+
+## Corporate Heist Music Pass
+
+- เปลี่ยนเพลง procedural เดิมจาก ambient arpeggio เป็นแนว `playful corporate heist` ให้ตรงกับ Clock Out Protocol
+- ใช้คอร์ด Dm–Bb–F–C, sneaky bass, muted office pluck, clock tick, keyboard clack และ elevator chime
+- Calm/Menu/HIDE: จังหวะ 108 BPM เบาและขี้เล่นเหมือนกำลังแอบออกจากออฟฟิศ
+- SEEK: เร่งเป็น 132 BPM เพิ่ม bass และ keyboard percussion ให้รู้สึกเป็นการไล่ล่า
+- URGENT 30 วินาทีสุดท้าย: 158 BPM เพิ่ม low printer-thump/heartbeat และเสียง synth ที่คมขึ้น
+- รักษา motif เดียวตลอดเพื่อให้การเปลี่ยน phase ต่อเนื่อง ไม่รู้สึกเปลี่ยนเป็นคนละเพลง
+- ปรับ master gain และ envelope ให้สนุกขึ้นแต่ไม่กลบ SFX/เสียงแจ้งเตือน gameplay
+- ใช้ Web Audio ทั้งหมด ไม่เพิ่ม asset download และยังรองรับ SOUND ON/OFF พร้อมค่าที่จำไว้
+- ตรวจ client/server production build ผ่าน
