@@ -4,10 +4,17 @@ import type { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
 import { MISSION_POOL } from "../../../shared/missions";
 import { ROOM_PROPS } from "../../../shared/mapLayout";
 
-// 4:3 matches MAP_WIDTH:MAP_HEIGHT (3200:2400) exactly, so the schematic
-// isn't stretched at either size.
-const COLLAPSED_SIZE = { w: 160, h: 120 };
-const EXPANDED_SIZE = { w: 640, h: 480 };
+// Derived from MAP_WIDTH:MAP_HEIGHT's actual ratio (no longer a fixed 4:3 —
+// the PART 1 final-polish gap-compression pass in mapLayout.ts compresses
+// each axis by a different amount, so the map's aspect ratio isn't a round
+// number anymore). A hardcoded ratio here would make scaleX/scaleY diverge
+// in render() below, stretching every room/cover-point non-uniformly.
+const MAP_ASPECT = MAP_WIDTH / MAP_HEIGHT;
+function sizeFor(longSide: number): { w: number; h: number } {
+  return MAP_ASPECT >= 1 ? { w: longSide, h: longSide / MAP_ASPECT } : { w: longSide * MAP_ASPECT, h: longSide };
+}
+const COLLAPSED_SIZE = sizeFor(160);
+const EXPANDED_SIZE = sizeFor(640);
 
 // Canvas-based schematic overlay, small in a corner by default, "M" toggles
 // a larger centered view. Draws only what this client is already allowed to
