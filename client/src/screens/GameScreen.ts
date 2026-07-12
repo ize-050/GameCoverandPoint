@@ -465,9 +465,16 @@ export class GameScreen implements Screen {
     this.hud.setHeldItem(this.myPlayer?.heldItem ?? "", !!showAbilities);
     const activeMissions = MISSION_POOL.filter((mission) => this.room!.state.missions.has(mission.id));
     const completedMissions = new Set(activeMissions.filter((mission) => this.room!.state.missions.get(mission.id)).map((mission) => mission.id));
-    this.hud.setMissions(activeMissions, completedMissions, this.myPlayer?.role === "hider" && phase === "seek" && activeMissions.length > 0);
+    const showHiderMissions = this.myPlayer?.role === "hider" && !this.myPlayer?.isCaught && phase === "seek" && activeMissions.length > 0;
     const showSeekerMission = this.myPlayer?.role === "seeker" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
-    this.hud.setSeekerMission(!!showSeekerMission);
+    // Hider and seeker objectives share the same HUD element. Calling both
+    // setters every frame meant setSeekerMission(false) immediately hid the
+    // hider checklist that setMissions had just rendered.
+    if (showSeekerMission) {
+      this.hud.setSeekerMission(true);
+    } else {
+      this.hud.setMissions(activeMissions, completedMissions, !!showHiderMissions);
+    }
     const scanRemainingSec = this.myPlayer?.role === "seeker" ? Math.ceil(Math.max(0, this.scanCooldownUntil - performance.now()) / 1000) : 0;
     this.hud.setScanCooldown(scanRemainingSec);
 

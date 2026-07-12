@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "runtime-map-art-v4",
+    release: "hider-mission-hud-v5",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );

@@ -327,3 +327,10 @@ git status
 - เปลี่ยนต้นไม้จิ๋วและกองเอกสารจาก sprite แบนเป็น geometry 3D พร้อมเพิ่มขนาดถังขยะ กล่อง และ coat rack
 - รักษา collision, mission positions, minimap และ gameplay layout เดิมทั้งหมด การปรับรอบนี้เป็น visual/readability pass
 - ตรวจผ่าน production build ทั้ง client และ server สำเร็จ
+
+## Hider Mission HUD Fix
+
+- แก้รายการ `HIDER MISSIONS` ฝั่งซ้ายไม่แสดงในช่วง SEEK
+- สาเหตุคือ Hider และ Seeker ใช้ HUD element เดียวกัน แต่โค้ดเรียก `setSeekerMission(false)` หลังวาดรายการ Hider ทุกเฟรม จึงซ่อน panel ทันที
+- เปลี่ยนการอัปเดตเป็น mutually exclusive ตาม role: Seeker วาด objective ของ Seeker ส่วน Hider วาด checklist ภารกิจที่สุ่มมาในรอบนั้น
+- Hider ที่ถูกจับแล้วจะไม่เห็น checklist และไม่มีผลต่อ logic การทำภารกิจเดิม
