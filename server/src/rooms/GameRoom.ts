@@ -11,6 +11,7 @@ import {
   SMOKE_ITEM_SPAWNS,
   randomHiderSpawn,
   collidesWithAnyWall,
+  resolveWallSlide,
   findRoomAt,
 } from "../../../shared/mapLayout.js";
 import { CoverPoint } from "../schema/CoverPoint.js";
@@ -30,6 +31,8 @@ import {
   type ItemKind,
 } from "../../../shared/messages.js";
 import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS } from "../../../shared/missions.js";
+
+const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
 
 // Looks identical to a real cover point client-side, but can never actually
 // hide anyone — computed once from the shared map data rather than kept in
@@ -139,7 +142,11 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("removeBot", (client) => this.handleRemoveBot(client));
 
     this.clock.setInterval(() => this.tick(), 1000);
-    this.clock.setInterval(() => this.tickBots(), 250);
+    // Matches MOVE_RATE_HZ (real players' move-message cadence) — bots used
+    // to tick at a flat 250ms, four times slower, which read as visibly
+    // jerky since RemotePlayer3D's per-frame lerp toward the last known
+    // position fully settles well before the next update arrives.
+    this.clock.setInterval(() => this.tickBots(), BOT_TICK_MS);
 
     this.addBots(Math.min(8, Math.max(0, Math.floor(Number(options.botCount) || 0))));
 
@@ -259,7 +266,7 @@ export class GameRoom extends Room<GameState> {
 
   private tickBots() {
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
-    const dt = 0.25;
+    const dt = BOT_TICK_MS / 1000;
     const bots = [...this.state.players.values()].filter((player) => player.isBot && !player.isCaught && !player.isEscaped);
     for (const bot of bots) {
       if (bot.role === "seeker" && this.state.phase === "hide") continue;
@@ -321,14 +328,21 @@ export class GameRoom extends Room<GameState> {
       const dy = target.y - bot.y;
       const distance = Math.max(1, Math.hypot(dx, dy));
       const speed = bot.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
-      const nextX = bot.x + (dx / distance) * Math.min(distance, speed * dt);
-      const nextY = bot.y + (dy / distance) * Math.min(distance, speed * dt);
-      if (!collidesWithAnyWall(nextX, nextY, 16)) {
-        bot.x = nextX;
-        bot.y = nextY;
+      const desiredX = bot.x + (dx / distance) * Math.min(distance, speed * dt);
+      const desiredY = bot.y + (dy / distance) * Math.min(distance, speed * dt);
+      // Slide along whichever axis is still open (same resolveWallSlide a
+      // real player's client prediction uses) instead of freezing solid the
+      // instant the direct line to the target clips a wall corner.
+      const resolved = resolveWallSlide(bot.x, bot.y, desiredX, desiredY, 16);
+      const moved = Math.hypot(resolved.x - bot.x, resolved.y - bot.y);
+      if (moved > 0.5) {
+        bot.x = resolved.x;
+        bot.y = resolved.y;
         bot.rotY = Math.atan2(dx, dy);
         bot.anim = "walk";
       } else {
+        // Genuinely blocked on both axes — drop this target so the next
+        // tick picks a fresh one instead of grinding against the same wall.
         this.botTargets.delete(bot.id);
       }
     }
