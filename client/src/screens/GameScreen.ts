@@ -59,6 +59,7 @@ import {
   generateWindowTexture,
   generateWallClockTexture,
   generateBulletinBoardTexture,
+  generateStickyNoteClusterTexture,
 } from "../textures/proceduralTextures";
 import { createReactionTexture } from "../textures/emote";
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
@@ -1723,7 +1724,7 @@ export class GameScreen implements Screen {
       floorLabel.position.set(room.x + room.w / 2, 0.85, room.y + room.h / 2);
       this.scene.add(floorLabel);
 
-      const glow = new THREE.PointLight(style.accent, room.id === "phonebooth" ? 0.35 : 0.22, Math.max(room.w, room.h) * 0.65, 2);
+      const glow = new THREE.PointLight(style.accent, room.id === "phonebooth" ? 0.42 : 0.28, Math.max(room.w, room.h) * 0.65, 2);
       glow.position.set(room.x + room.w / 2, 75, room.y + room.h / 2);
       this.scene.add(glow);
     }
@@ -1941,12 +1942,30 @@ export class GameScreen implements Screen {
     const binMat = new THREE.MeshStandardMaterial({ color: 0x5b6470 });
     const boxMat = new THREE.MeshStandardMaterial({ color: 0xb08d57 });
     const rackMat = new THREE.MeshStandardMaterial({ color: 0x6b7280 });
+    const stickyNoteTex = generateStickyNoteClusterTexture();
 
     DECORATIONS.forEach((deco, i) => {
       if (deco.kind === "bin") {
+        // Placeholder cylinder now, swapped for the real trashcan.glb once
+        // furniture preloads — same pattern as cardboard-box/coat-rack below.
         const bin = new THREE.Mesh(new THREE.CylinderGeometry(7, 5.5, 14, 12), binMat);
         bin.position.set(deco.x, 7, deco.y);
         this.scene.add(bin);
+        this.roomPropModelTargets.push({ id: `deco-bin-${i}`, kind: "bin", obj: bin });
+        return;
+      }
+
+      if (deco.kind === "sticky-notes") {
+        const notes = new THREE.Mesh(
+          new THREE.PlaneGeometry(32, 32),
+          new THREE.MeshBasicMaterial({ map: stickyNoteTex, transparent: true, depthWrite: false })
+        );
+        // Nudged off the wall along its own facing direction (not just
+        // `deco.y`/depth into the room) so it clears the wall's own
+        // thickness/baseboard trim regardless of which side it's mounted on.
+        notes.position.set(deco.x + Math.sin(deco.rot ?? 0) * 6, 38, deco.y + Math.cos(deco.rot ?? 0) * 6);
+        notes.rotation.y = deco.rot ?? 0;
+        this.scene.add(notes);
         return;
       }
 

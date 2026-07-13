@@ -577,11 +577,15 @@ export function randomHiderSpawn(): { x: number; y: number } {
 // Purely cosmetic scatter (office props) — never collided against, not
 // synced through room state, just a fixed list every client renders
 // identically so the floor doesn't read as empty between furniture.
-export type DecorationKind = "plant-small" | "papers" | "bin" | "cardboard-box" | "coat-rack";
+export type DecorationKind = "plant-small" | "papers" | "bin" | "cardboard-box" | "coat-rack" | "sticky-notes";
 export interface DecorationDef {
   x: number;
   y: number;
   kind: DecorationKind;
+  // Y-axis rotation (radians) — only meaningful for wall-mounted kinds like
+  // "sticky-notes", which need to face into the room rather than always
+  // facing the same fixed direction.
+  rot?: number;
 }
 
 function scatter(kind: DecorationKind, count: number, seed: number, mapW: number, mapH: number): DecorationDef[] {
@@ -608,7 +612,7 @@ function tooCloseToCoverPoint(x: number, y: number): boolean {
 // Curated office clusters. Previous versions scattered hundreds of objects
 // uniformly across the full map, which read as random noise while still
 // leaving the important work areas compositionally empty.
-const CURATED_ROOM_DECOR: Array<{ roomId: string; kind: DecorationKind; fx: number; fy: number }> = [
+const CURATED_ROOM_DECOR: Array<{ roomId: string; kind: DecorationKind; fx: number; fy: number; rot?: number }> = [
   { roomId: "server", kind: "cardboard-box", fx: .16, fy: .78 }, { roomId: "server", kind: "bin", fx: .82, fy: .78 },
   { roomId: "server", kind: "papers", fx: .5, fy: .72 }, { roomId: "lounge", kind: "plant-small", fx: .12, fy: .2 },
   { roomId: "lounge", kind: "plant-small", fx: .88, fy: .2 }, { roomId: "lounge", kind: "bin", fx: .86, fy: .8 },
@@ -621,11 +625,22 @@ const CURATED_ROOM_DECOR: Array<{ roomId: string; kind: DecorationKind; fx: numb
   { roomId: "work_b", kind: "papers", fx: .73, fy: .52 }, { roomId: "reception", kind: "plant-small", fx: .12, fy: .2 },
   { roomId: "reception", kind: "plant-small", fx: .88, fy: .2 }, { roomId: "reception", kind: "cardboard-box", fx: .84, fy: .78 },
   { roomId: "reception", kind: "coat-rack", fx: .16, fy: .78 },
+  // Sticky-note clusters — cheap, high-impact "lived-in cubicle" clutter on
+  // the walls (matches the landing page key art's post-it-covered look).
+  // `rot` faces the note plane into the room from whichever wall it's near.
+  { roomId: "server", kind: "sticky-notes", fx: .5, fy: .06, rot: 0 },
+  { roomId: "lounge", kind: "sticky-notes", fx: .5, fy: .06, rot: 0 },
+  { roomId: "work_a", kind: "sticky-notes", fx: .06, fy: .35, rot: Math.PI / 2 },
+  { roomId: "work_a", kind: "sticky-notes", fx: .94, fy: .7, rot: -Math.PI / 2 },
+  { roomId: "work_b", kind: "sticky-notes", fx: .94, fy: .35, rot: -Math.PI / 2 },
+  { roomId: "work_b", kind: "sticky-notes", fx: .06, fy: .7, rot: Math.PI / 2 },
+  { roomId: "meeting", kind: "sticky-notes", fx: .5, fy: .06, rot: 0 },
+  { roomId: "reception", kind: "sticky-notes", fx: .06, fy: .5, rot: Math.PI / 2 },
 ];
 
 export const DECORATIONS: DecorationDef[] = CURATED_ROOM_DECOR.map((item) => {
   const room = ROOMS.find((candidate) => candidate.id === item.roomId)!;
-  return { kind: item.kind, x: room.x + room.w * item.fx, y: room.y + room.h * item.fy };
+  return { kind: item.kind, x: room.x + room.w * item.fx, y: room.y + room.h * item.fy, rot: item.rot };
 }).filter((d) => !collidesWithAnyWall(d.x, d.y, 18))
   .filter((d) => (d.kind === "cardboard-box" || d.kind === "coat-rack" ? !tooCloseToCoverPoint(d.x, d.y) : true));
 

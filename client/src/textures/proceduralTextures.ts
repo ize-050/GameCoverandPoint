@@ -508,3 +508,31 @@ export function generateBulletinBoardTexture(): THREE.CanvasTexture {
   ctx.strokeRect(1.5, 1.5, size - 3, size - 3);
   return toTexture(canvas);
 }
+
+// Small cluster of colorful sticky notes stuck directly on a wall/cubicle
+// partition — unlike the bulletin board above, this has NO background plate
+// (transparent canvas), so it reads as notes pinned straight onto whatever
+// surface it's mounted on. Cheap, high-impact "lived-in cubicle" clutter.
+export function generateStickyNoteClusterTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const { canvas, ctx } = makeCanvas(size, size);
+  const notes: [number, number, number, number][] = [
+    [6, 8, 18, 0xfde68a],
+    [32, 5, -10, 0xfca5a5],
+    [10, 32, 10, 0x93c5fd],
+    [35, 34, -16, 0xbbf7d0],
+  ];
+  for (const [x, y, rotDeg, color] of notes) {
+    ctx.save();
+    ctx.translate(x + 11, y + 11);
+    ctx.rotate((rotDeg * Math.PI) / 180);
+    ctx.fillStyle = rgba(0x000000, 0.18);
+    ctx.fillRect(-10, -9, 21, 21);
+    ctx.fillStyle = rgba(color, 0.96);
+    ctx.fillRect(-11, -11, 21, 21);
+    ctx.fillStyle = rgba(0x000000, 0.28);
+    for (let line = 0; line < 3; line++) ctx.fillRect(-7, -4 + line * 5, 13, 1.4);
+    ctx.restore();
+  }
+  return toTexture(canvas);
+}

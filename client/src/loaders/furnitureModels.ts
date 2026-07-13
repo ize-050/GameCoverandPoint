@@ -42,6 +42,7 @@ export const FURNITURE_MODEL_VARIANTS: Record<string, string[]> = {
   tv: ["/models/furniture/televisionModern.glb"],
   "cardboard-box": ["/models/furniture/cardboardBoxClosed.glb", "/models/furniture/cardboardBoxOpen.glb"],
   "coat-rack": ["/models/furniture/coatRack.glb"],
+  bin: ["/models/furniture/trashcan.glb"],
 };
 
 // Simple deterministic string hash (djb2) — picks the SAME variant for the
