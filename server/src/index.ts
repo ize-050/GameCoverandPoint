@@ -14,7 +14,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "corporate-heist-music-v11",
+    release: "office-chaos-v12",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
   })
 );
