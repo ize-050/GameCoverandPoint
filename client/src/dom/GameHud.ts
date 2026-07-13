@@ -9,7 +9,7 @@ const HELP_HTML = `
   <div style="margin-bottom:6px;">กล้อง isometric ล็อกมุมและซูมเท่ากันสำหรับผู้เล่นทุกคน</div>
   <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
   <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
-  <div style="margin-bottom:6px;">กด E ค้าง 3 วินาที — ทำ Office Mission (ปล่อยหรือเดินออกเพื่อยกเลิก)</div>
+  <div style="margin-bottom:6px;">E — เริ่ม Office Mission แล้วกด WASD ตาม sequence ก่อนเวลาหมด</div>
   <div style="margin-bottom:6px;">C — Hider: สลับกล้องไปดูเพื่อน 4 วินาที</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
     1 2 3 4 — ส่งอีโมจิ
@@ -51,6 +51,8 @@ export class GameHud {
   private hintEl: HTMLDivElement;
   private itemEl: HTMLDivElement;
   private missionsEl: HTMLDivElement;
+  private corporateEventEl: HTMLDivElement;
+  private challengeEl: HTMLDivElement;
   private roleBannerTimeout?: ReturnType<typeof setTimeout>;
   private feedbackTimeout?: ReturnType<typeof setTimeout>;
   private helpVisible = false;
@@ -66,6 +68,8 @@ export class GameHud {
       <div id="hudRelocate" style="position:absolute;top:92px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:700;color:#4ade80;background:#00000088;padding:4px 12px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
       <div id="hudScanCooldown" style="position:absolute;top:126px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:#22d3ee;background:#00000088;padding:4px 10px;border-radius:8px;display:none;white-space:nowrap;align-items:center;gap:6px;"></div>
       <div id="hudFeedback" style="position:absolute;top:20%;left:50%;transform:translateX(-50%);font-size:18px;color:#ffe066;background:#000000aa;padding:10px 16px;border-radius:10px;text-align:center;display:none;align-items:center;gap:8px;justify-content:center;"></div>
+      <div id="hudCorporateEvent" style="position:absolute;top:72px;left:50%;transform:translateX(-50%);width:min(520px,calc(100vw - 32px));box-sizing:border-box;color:#fff;background:linear-gradient(135deg,#7f1d1dee,#b45309ee);border:2px solid #fbbf24;border-radius:14px;padding:10px 18px;text-align:center;display:none;box-shadow:0 0 28px #f59e0b55;"></div>
+      <div id="hudChallenge" style="position:absolute;bottom:128px;left:50%;transform:translateX(-50%);width:min(440px,calc(100vw - 32px));box-sizing:border-box;color:#fff;background:#07111df2;border:2px solid #22d3ee;border-radius:14px;padding:14px 18px;text-align:center;display:none;box-shadow:0 0 26px #22d3ee44;"></div>
       <div id="hudRoleBanner" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;">
         <div style="background:#000000d9;padding:30px 50px;border-radius:16px;font-size:30px;color:#fff;text-align:center;display:flex;align-items:center;gap:14px;"></div>
       </div>
@@ -98,6 +102,8 @@ export class GameHud {
     this.hintEl = this.root.querySelector("#hudHint") as HTMLDivElement;
     this.itemEl = this.root.querySelector("#hudItem") as HTMLDivElement;
     this.missionsEl = this.root.querySelector("#hudMissions") as HTMLDivElement;
+    this.corporateEventEl = this.root.querySelector("#hudCorporateEvent") as HTMLDivElement;
+    this.challengeEl = this.root.querySelector("#hudChallenge") as HTMLDivElement;
     this.itemEl.addEventListener("click", onUseItem);
 
     (this.root.querySelector("#hudHelpBtn") as HTMLButtonElement).addEventListener("click", () => {
@@ -209,9 +215,34 @@ export class GameHud {
   setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean, exitUnlocked = false, totalDone = 0, missionGoal = missions.length) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
-    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${totalDone}/${missionGoal}</div><div style="color:#94a3b8;margin-bottom:7px;">2 active tasks · hold E for 3s.</div>` +
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${totalDone}/${missionGoal}</div><div style="color:#94a3b8;margin-bottom:7px;">2 active tasks · press E, then match WASD.</div>` +
       missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("") +
       `<div style="margin-top:9px;padding-top:7px;border-top:1px solid #ffffff22;color:${exitUnlocked ? "#4ade80" : "#fca5a5"};font-weight:800;">${exitUnlocked ? "🚪 EXIT OPEN — ESCAPE AT RECEPTION" : "🔒 EXIT LOCKED"}</div>`;
+  }
+
+  setCorporateEvent(kind: string, seconds: number) {
+    if (!kind || seconds <= 0) {
+      this.corporateEventEl.style.display = "none";
+      return;
+    }
+    const copy: Record<string, [string, string]> = {
+      mandatory_meeting: ["📢 MANDATORY MEETING", "Reach the Meeting Room before the audit ends"],
+      freeze_review: ["🧊 PERFORMANCE REVIEW", "FREEZE — moving reveals you to Office Patrol"],
+      printer_meltdown: ["🖨️ PRINTER MELTDOWN", "Stay clear of the Report Terminal in Work Zone A"],
+    };
+    const [title, instruction] = copy[kind] ?? [kind, "Follow company policy"];
+    this.corporateEventEl.style.display = "block";
+    this.corporateEventEl.innerHTML = `<div style="font-weight:950;letter-spacing:.09em;color:#fef3c7;">${title} · ${seconds}s</div><div style="font-size:12px;margin-top:3px;color:#fff7ed;">${instruction}</div>`;
+  }
+
+  setMissionChallenge(title: string, sequence: string[], current: number, seconds: number) {
+    if (!sequence.length) {
+      this.challengeEl.style.display = "none";
+      return;
+    }
+    this.challengeEl.style.display = "block";
+    const keys = sequence.map((key, index) => `<span style="display:inline-flex;width:38px;height:38px;margin:7px 4px;align-items:center;justify-content:center;border-radius:8px;font-size:20px;font-weight:950;background:${index < current ? "#16a34a" : index === current ? "#0891b2" : "#1e293b"};border:1px solid ${index === current ? "#67e8f9" : "#ffffff22"};">${key}</span>`).join("");
+    this.challengeEl.innerHTML = `<div style="font-size:12px;color:#facc15;font-weight:900;letter-spacing:.08em;">OFFICE SKILL CHECK · ${seconds}s</div><div style="font-size:13px;margin-top:3px;">${title}</div><div>${keys}</div><div style="font-size:11px;color:#94a3b8;">Wrong key makes noise and reveals your position</div>`;
   }
 
   // Seeker's equivalent of the hider mission panel — reuses the same corner

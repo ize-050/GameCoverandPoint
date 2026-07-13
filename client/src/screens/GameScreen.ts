@@ -37,6 +37,9 @@ import type {
   ItemPickedMessage,
   TrapMessage,
   CooldownMessage,
+  CorporateEventMessage,
+  MissionChallengeMessage,
+  OfficePrankMessage,
 } from "../../../shared/messages";
 import { MISSION_POOL } from "../../../shared/missions";
 import {
@@ -240,8 +243,11 @@ export class GameScreen implements Screen {
   private cameraTargetPlayerId = "";
   private teammateCameraUntil = 0;
   private missionInteractionId = "";
-  private missionInteractionStartedAt = 0;
-  private missionInteractionSent = false;
+  private missionSequence: string[] = [];
+  private missionSequenceIndex = 0;
+  private missionChallengeExpiresAt = 0;
+  private missionRequestAt = 0;
+  private ghostPrankCooldownUntil = 0;
   private teammateCameraCursor = -1;
   private unsubs: Array<() => void> = [];
   private navigate: Navigate;
@@ -329,8 +335,11 @@ export class GameScreen implements Screen {
     this.traceRevealPoints = [];
     this.scanCooldownUntil = 0;
     this.missionInteractionId = "";
-    this.missionInteractionStartedAt = 0;
-    this.missionInteractionSent = false;
+    this.missionSequence = [];
+    this.missionSequenceIndex = 0;
+    this.missionChallengeExpiresAt = 0;
+    this.missionRequestAt = 0;
+    this.ghostPrankCooldownUntil = 0;
     this.lastScanOrigin = null;
     this.hud?.destroy();
     this.hud = undefined;
@@ -376,6 +385,10 @@ export class GameScreen implements Screen {
       });
       if (isGhost) this.ensureSpectatorCamera();
       if (isGhost && keyboard.justDown("KeyC")) this.cycleTeammateCamera(true);
+      if (isGhost && phase === "seek" && keyboard.justDown("KeyQ") && performance.now() >= this.ghostPrankCooldownUntil) {
+        this.ghostPrankCooldownUntil = performance.now() + GAME_CONFIG.GHOST_PRANK_COOLDOWN_MS;
+        this.room.send("ghostPrank");
+      }
       const cameraRemote = (isGhost || performance.now() < this.teammateCameraUntil) ? this.remotePlayers.get(this.cameraTargetPlayerId) : undefined;
       this.desiredFollowTarget.copy(cameraRemote?.character.position ?? this.localPlayer.character.position);
       // Keep the orthographic frustum inside the playable floor. Without
@@ -510,7 +523,14 @@ export class GameScreen implements Screen {
     const showInspects = this.myPlayer?.role === "seeker" && (phase === "hide" || phase === "seek");
     this.hud.setInspectsRemaining(this.myPlayer?.inspectsRemaining ?? 0, GAME_CONFIG.MAX_INSPECT_ATTEMPTS, showInspects);
 
-    this.hud.setRelocateActive(this.room.state.relocateActive, this.myPlayer?.role ?? "");
+    this.hud.setRelocateActive(this.room.state.relocateActive && !this.room.state.corporateEvent, this.myPlayer?.role ?? "");
+    this.hud.setCorporateEvent(this.room.state.corporateEvent, this.room.state.corporateEventTime);
+    this.hud.setMissionChallenge(
+      this.missionInteractionId ? MISSION_POOL.find((mission) => mission.id === this.missionInteractionId)?.title ?? "OFFICE TASK" : "",
+      this.missionSequence,
+      this.missionSequenceIndex,
+      Math.max(0, Math.ceil((this.missionChallengeExpiresAt - performance.now()) / 1000))
+    );
 
     const showAbilities = this.myPlayer?.role === "hider" && !this.myPlayer?.isCaught && (phase === "hide" || phase === "seek");
     this.hud.setAbilitiesVisible(!!showAbilities);
@@ -661,6 +681,47 @@ export class GameScreen implements Screen {
       playSmokeDeploySfx();
     });
     this.unsubs.push(offSmokeDeployed);
+
+    const offCorporateEvent = room.onMessage("corporateEvent", (msg: CorporateEventMessage) => {
+      this.hud?.showFeedback(`📢 ${escapeHtml(msg.title)}<br/><span style="font-size:13px;color:#fff">${escapeHtml(msg.instruction)}</span>`, 3200);
+      playServerAlarmSfx();
+    });
+    const offCorporateEventEnd = room.onMessage("corporateEventEnd", () => {
+      this.hud?.showFeedback("✅ CORPORATE EVENT COMPLETE", 1000);
+    });
+    const offPolicyReveal = room.onMessage("policyReveal", (msg: RevealPingMessage) => {
+      this.playRevealBeacons(msg.points, msg.durationMs);
+      playServerAlarmSfx();
+    });
+    const offPolicyViolation = room.onMessage("policyViolation", (msg: { reason: string }) => {
+      this.hud?.showFeedback(`🚨 POLICY VIOLATION: ${escapeHtml(msg.reason)}<br/>Office Patrol can see you!`, 2600);
+      playCaughtSfx();
+    });
+    const offMissionChallenge = room.onMessage("missionChallenge", (msg: MissionChallengeMessage) => {
+      this.missionInteractionId = msg.missionId;
+      this.missionSequence = msg.sequence;
+      this.missionSequenceIndex = 0;
+      this.missionChallengeExpiresAt = performance.now() + msg.durationMs;
+      this.missionRequestAt = 0;
+    });
+    const offOfficePrank = room.onMessage("officePrank", (msg: OfficePrankMessage) => {
+      this.playPaperBurst(msg.x, msg.y, msg.kind === "ghost" ? 0xa78bfa : msg.kind === "mission_fail" ? 0xef4444 : 0xffffff);
+      if (msg.kind === "ghost") this.hud?.showFeedback(`👻 ${escapeHtml(msg.nickname ?? "Office Ghost")} jammed the printer!`, 1500);
+      else if (msg.kind === "mission_fail") this.hud?.showFeedback(`💥 ${escapeHtml(msg.nickname ?? "Someone")} failed a task loudly!`, 1500);
+      playSmokeDeploySfx();
+    });
+    const offGhostPrankCooldown = room.onMessage("ghostPrankCooldown", (msg: CooldownMessage) => {
+      this.ghostPrankCooldownUntil = performance.now() + Math.max(0, msg.remainingMs);
+    });
+    this.unsubs.push(
+      offCorporateEvent,
+      offCorporateEventEnd,
+      offPolicyReveal,
+      offPolicyViolation,
+      offMissionChallenge,
+      offOfficePrank,
+      offGhostPrankCooldown
+    );
 
     // Both scan (small radius, short cooldown) and the trace terminal
     // (map-wide, long cooldown) are one-shot private snapshots — same
@@ -964,6 +1025,40 @@ export class GameScreen implements Screen {
     }
   }
 
+  private playPaperBurst(x: number, z: number, colour: number) {
+    const group = new THREE.Group();
+    group.position.set(x, 18, z);
+    const papers: Array<{ mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: number }> = [];
+    for (let i = 0; i < 18; i++) {
+      const material = new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? colour : 0xf8fafc, side: THREE.DoubleSide, transparent: true });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 7), material);
+      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      group.add(mesh);
+      const angle = (i / 18) * Math.PI * 2 + Math.random() * 0.35;
+      papers.push({ mesh, vx: Math.cos(angle) * (55 + Math.random() * 75), vy: 55 + Math.random() * 80, vz: Math.sin(angle) * (55 + Math.random() * 75), spin: 3 + Math.random() * 6 });
+    }
+    this.scene.add(group);
+    new TWEEN.Tween({ t: 0, opacity: 1 })
+      .to({ t: 1, opacity: 0 }, 1200)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .onUpdate((state) => {
+        papers.forEach((paper) => {
+          paper.mesh.position.set(paper.vx * state.t, paper.vy * state.t - 60 * state.t * state.t, paper.vz * state.t);
+          paper.mesh.rotation.x += paper.spin * 0.012;
+          paper.mesh.rotation.z += paper.spin * 0.016;
+          (paper.mesh.material as THREE.MeshBasicMaterial).opacity = state.opacity;
+        });
+      })
+      .onComplete(() => {
+        this.scene.remove(group);
+        papers.forEach(({ mesh }) => {
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        });
+      })
+      .start();
+  }
+
   // Scan/trace reveal — a dark humanoid shadow silhouette standing at each
   // snapshot position (not just an abstract marker), held for the reveal
   // duration then fading out. This client-side timer is the ONLY thing
@@ -1138,8 +1233,12 @@ export class GameScreen implements Screen {
   // on-screen indication of how to come back out.
   private computeHint(phase: string): string | null {
     const me = this.myPlayer;
-    if (!me || me.isCaught || !this.localPlayer || !this.room) return null;
+    if (!me || !this.localPlayer || !this.room) return null;
     if (phase !== "hide" && phase !== "seek") return null;
+    if (me.isCaught) {
+      const seconds = Math.ceil(Math.max(0, this.ghostPrankCooldownUntil - performance.now()) / 1000);
+      return seconds > 0 ? `👻 Ghost Prank ready in ${seconds}s · [C] switch survivor camera` : "[Q] GHOST PRANK · fake a noisy printer alert  |  [C] spectate survivor";
+    }
 
     if (me.role === "hider" && me.isHidden) return "[SPACE] ออกจากที่ซ่อน";
 
@@ -1154,12 +1253,8 @@ export class GameScreen implements Screen {
       if (exit) return this.room.state.exitUnlocked ? "[SPACE] CLOCK OUT — หนีออกจาก Office" : "EXIT LOCKED — ทำ Mission ให้ครบก่อน";
       const mission = this.findNearbyMission();
       if (mission) {
-        if (this.missionInteractionId === mission.id) {
-          const ratio = Math.min(1, (performance.now() - this.missionInteractionStartedAt) / GAME_CONFIG.MISSION_INTERACTION_MS);
-          const filled = Math.round(ratio * 10);
-          return `HOLD E ${mission.title}  ${"█".repeat(filled)}${"░".repeat(10 - filled)} ${Math.round(ratio * 100)}%`;
-        }
-        return `[HOLD E 3s] ${mission.title}`;
+        if (this.missionInteractionId === mission.id) return "Match the WASD sequence shown above";
+        return `[E] START SKILL CHECK · ${mission.title}`;
       }
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
@@ -1200,24 +1295,41 @@ export class GameScreen implements Screen {
   }
 
   private updateMissionInteraction() {
-    const mission = this.findNearbyMission();
-    if (!keyboard.isDown("KeyE") || !mission) {
-      if (this.missionInteractionId) this.room?.send("cancelMission");
-      this.missionInteractionId = "";
-      this.missionInteractionStartedAt = 0;
-      this.missionInteractionSent = false;
+    if (this.missionInteractionId && this.missionSequence.length > 0) {
+      if (performance.now() >= this.missionChallengeExpiresAt) {
+        this.room?.send("failMission", { missionId: this.missionInteractionId });
+        this.clearMissionChallenge();
+        return;
+      }
+      const keyMap: Array<[string, string]> = [["KeyW", "W"], ["KeyA", "A"], ["KeyS", "S"], ["KeyD", "D"]];
+      const pressed = keyMap.find(([code]) => keyboard.justDown(code))?.[1];
+      if (!pressed) return;
+      if (pressed !== this.missionSequence[this.missionSequenceIndex]) {
+        this.room?.send("failMission", { missionId: this.missionInteractionId });
+        this.clearMissionChallenge();
+        return;
+      }
+      this.missionSequenceIndex += 1;
+      if (this.missionSequenceIndex >= this.missionSequence.length) {
+        this.room?.send("completeMission", { missionId: this.missionInteractionId, sequence: this.missionSequence.join("") });
+        this.clearMissionChallenge();
+      }
       return;
     }
-    if (this.missionInteractionId !== mission.id) {
-      this.missionInteractionId = mission.id;
-      this.missionInteractionStartedAt = performance.now();
-      this.missionInteractionSent = false;
+    if (this.missionRequestAt && performance.now() - this.missionRequestAt > 1200) this.missionRequestAt = 0;
+    const mission = this.findNearbyMission();
+    if (keyboard.justDown("KeyE") && mission && !this.missionRequestAt) {
+      this.missionRequestAt = performance.now();
       this.room?.send("startMission", { missionId: mission.id });
     }
-    if (!this.missionInteractionSent && performance.now() - this.missionInteractionStartedAt >= GAME_CONFIG.MISSION_INTERACTION_MS) {
-      this.missionInteractionSent = true;
-      this.room?.send("completeMission", { missionId: mission.id });
-    }
+  }
+
+  private clearMissionChallenge() {
+    this.missionInteractionId = "";
+    this.missionSequence = [];
+    this.missionSequenceIndex = 0;
+    this.missionChallengeExpiresAt = 0;
+    this.missionRequestAt = 0;
   }
 
   private handleSpacePress() {

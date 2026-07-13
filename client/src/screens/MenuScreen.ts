@@ -108,7 +108,7 @@ export class MenuScreen implements Screen {
           <div class="steps-grid">
             <article><b>01</b><span>CREATE A ROOM</span><p>Choose a character, create a room and share the four-character code.</p></article>
             <article><b>02</b><span>REVEAL YOUR ROLE</span><p>Each round randomly assigns the Clock-Out Crew and Office Patrol.</p></article>
-            <article><b>03</b><span>WORK UNDER PRESSURE</span><p>Hiders hold E for 3 seconds at mission markers. Moving or releasing E cancels the task.</p></article>
+            <article><b>03</b><span>WORK UNDER PRESSURE</span><p>Press E at mission markers, then match the WASD skill check. Mistakes make noise and reveal you.</p></article>
             <article><b>04</b><span>CLOCK OUT</span><p>Finish all four missions, unlock the Reception exit and escape. Patrol wins by catching the crew first.</p></article>
           </div>
           <div class="controls-strip"><span><kbd>WASD</kbd> MOVE</span><span><kbd>SPACE</kbd> HIDE / INSPECT</span><span><kbd>E</kbd> MISSION</span><span><kbd>Q</kbd> GADGET</span><span><kbd>F</kbd> SCAN</span><span><kbd>1–4</kbd> EMOTE ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}</span></div>

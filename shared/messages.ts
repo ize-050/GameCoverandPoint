@@ -164,3 +164,25 @@ export interface RevealPingMessage {
   points: { x: number; y: number }[];
   durationMs: number;
 }
+
+export type CorporateEventKind = "mandatory_meeting" | "freeze_review" | "printer_meltdown";
+export interface CorporateEventMessage {
+  kind: CorporateEventKind;
+  title: string;
+  instruction: string;
+  durationSec: number;
+}
+
+export interface MissionChallengeMessage {
+  missionId: string;
+  title: string;
+  sequence: string[];
+  durationMs: number;
+}
+
+export interface OfficePrankMessage {
+  kind: "paper" | "mission_fail" | "ghost";
+  x: number;
+  y: number;
+  nickname?: string;
+}

@@ -18,6 +18,8 @@ export class GameState extends Schema {
   @type("boolean") exitUnlocked: boolean = false;
   @type("number") missionsCompleted: number = 0;
   @type("number") missionGoal: number = 4;
+  @type("string") corporateEvent: string = "";
+  @type("number") corporateEventTime: number = 0;
   // Universal light-switch mechanic: presence of a room id key (value
   // `true`) means that room is currently dark. Any player can toggle any
   // room via its switch prop, capped at GAME_CONFIG.MAX_DARK_ROOMS at once.

@@ -30,6 +30,7 @@ import {
   type EmoteMessage,
   type UsePropMessage,
   type ItemKind,
+  type CorporateEventKind,
 } from "../../../shared/messages.js";
 import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS, type MissionDef } from "../../../shared/missions.js";
 
@@ -108,12 +109,17 @@ export class GameRoom extends Room<GameState> {
   private stunTraps: Array<{ id: string; x: number; y: number; ownerId: string }> = [];
   private survivalMilestones = new Set<number>();
   private missionCooldownUntil = new Map<string, number>();
-  private missionStartedAt = new Map<string, { missionId: string; startedAt: number }>();
+  private missionStartedAt = new Map<string, { missionId: string; startedAt: number; sequence?: string }>();
   private missionQueue: typeof MISSION_POOL = [];
   private scanCooldownUntil = new Map<string, number>();
   private traceCooldownUntil = new Map<string, number>();
   private roundDecoyCoverPointIds = new Set<string>();
   private personalHideCooldownUntil = new Map<string, number>();
+  private ghostPrankCooldownUntil = new Map<string, number>();
+  private corporateEventDeck: CorporateEventKind[] = [];
+  private nextCorporateEventAt = GAME_CONFIG.CORPORATE_EVENT_FIRST_SEC;
+  private freezeViolators = new Set<string>();
+  private botPolicyTargets = new Map<string, { playerId: string; x: number; y: number; expiresAt: number }>();
   private botTargets = new Map<string, { x: number; y: number }>();
   // Bots have no real pathfinding (just a straight line to their target), so
   // a fixed-point goal — a mission prop, a hider being chased — can leave
@@ -177,8 +183,10 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("useSmoke", (client) => this.handleUseSmoke(client));
     this.onMessage("scanPulse", (client) => this.handleScanPulse(client));
     this.onMessage("useItem", (client) => this.handleUseItem(client));
-    this.onMessage("completeMission", (client, message: { missionId?: string }) => this.handleCompleteMission(client, message));
+    this.onMessage("completeMission", (client, message: { missionId?: string; sequence?: string }) => this.handleCompleteMission(client, message));
     this.onMessage("startMission", (client, message: { missionId?: string }) => this.handleStartMission(client, message));
+    this.onMessage("failMission", (client, message: { missionId?: string }) => this.handleFailMission(client, message));
+    this.onMessage("ghostPrank", (client) => this.handleGhostPrank(client));
     this.onMessage("cancelMission", (client) => this.missionStartedAt.delete(client.sessionId));
     this.onMessage("toggleReady", (client) => this.handleToggleReady(client));
     this.onMessage("kickPlayer", (client, message: { playerId?: string }) => this.handleKickPlayer(client, message));
@@ -204,6 +212,7 @@ export class GameRoom extends Room<GameState> {
     if (this.state.phase === "seek") {
       this.updateRelocateWindow();
       const elapsed = GAME_CONFIG.SEEK_PHASE_SEC - this.state.timeRemaining;
+      this.updateCorporateEvents(elapsed);
       if (elapsed > 0 && elapsed % 60 === 0 && !this.survivalMilestones.has(elapsed)) {
         this.survivalMilestones.add(elapsed);
         this.state.players.forEach((p) => {
@@ -238,6 +247,89 @@ export class GameRoom extends Room<GameState> {
     const elapsed = GAME_CONFIG.SEEK_PHASE_SEC - this.state.timeRemaining;
     const cyclePos = ((elapsed % GAME_CONFIG.RELOCATE_INTERVAL_SEC) + GAME_CONFIG.RELOCATE_INTERVAL_SEC) % GAME_CONFIG.RELOCATE_INTERVAL_SEC;
     this.state.relocateActive = cyclePos < GAME_CONFIG.RELOCATE_WINDOW_SEC;
+  }
+
+  private updateCorporateEvents(elapsed: number) {
+    if (this.state.corporateEvent) {
+      if (this.state.corporateEvent === "printer_meltdown" && this.state.corporateEventTime === 6) this.triggerPrinterBlast();
+      this.state.corporateEventTime = Math.max(0, this.state.corporateEventTime - 1);
+      if (this.state.corporateEventTime === 0) this.finishCorporateEvent();
+      return;
+    }
+    if (elapsed < this.nextCorporateEventAt) return;
+    this.startCorporateEvent();
+    this.nextCorporateEventAt += GAME_CONFIG.CORPORATE_EVENT_INTERVAL_SEC;
+  }
+
+  private startCorporateEvent() {
+    if (this.corporateEventDeck.length === 0) {
+      this.corporateEventDeck = shuffled<CorporateEventKind>(["mandatory_meeting", "freeze_review", "printer_meltdown"]);
+    }
+    const kind = this.corporateEventDeck.pop()!;
+    this.state.corporateEvent = kind;
+    this.state.corporateEventTime = GAME_CONFIG.CORPORATE_EVENT_DURATION_SEC;
+    this.freezeViolators.clear();
+    const copy = {
+      mandatory_meeting: { title: "MANDATORY MEETING", instruction: "Reach the Meeting Room before the audit ends—or your location is exposed." },
+      freeze_review: { title: "PERFORMANCE REVIEW", instruction: "FREEZE! Moving during the review alerts Office Patrol." },
+      printer_meltdown: { title: "PRINTER MELTDOWN", instruction: "The report terminal is firing paper blasts. Stay clear of Work Zone A!" },
+    } as const;
+    this.broadcast("corporateEvent", { kind, ...copy[kind], durationSec: GAME_CONFIG.CORPORATE_EVENT_DURATION_SEC });
+    if (kind === "printer_meltdown") this.triggerPrinterBlast();
+  }
+
+  private finishCorporateEvent() {
+    const kind = this.state.corporateEvent as CorporateEventKind;
+    if (kind === "mandatory_meeting") {
+      this.state.players.forEach((player) => {
+        if (player.role !== "hider" || player.isCaught || player.isEscaped) return;
+        if (findRoomAt(player.x, player.y)?.id !== "meeting") this.revealPolicyViolation(player, "MISSED THE MEETING");
+        else player.score += 10;
+      });
+    }
+    this.state.corporateEvent = "";
+    this.state.corporateEventTime = 0;
+    this.freezeViolators.clear();
+    this.broadcast("corporateEventEnd", { kind });
+  }
+
+  private revealPolicyViolation(player: Player, reason: string) {
+    this.state.players.forEach((viewer) => {
+      if (viewer.isBot && viewer.role === "seeker" && !viewer.isCaught) {
+        this.botPolicyTargets.set(viewer.id, { playerId: player.id, x: player.x, y: player.y, expiresAt: Date.now() + GAME_CONFIG.POLICY_REVEAL_DURATION_MS });
+      }
+    });
+    this.clients.forEach((client) => {
+      const viewer = this.state.players.get(client.sessionId);
+      if (viewer?.role === "seeker" && !viewer.isCaught) {
+        client.send("policyReveal", { points: [{ x: player.x, y: player.y }], durationMs: GAME_CONFIG.POLICY_REVEAL_DURATION_MS });
+      }
+      if (client.sessionId === player.id) client.send("policyViolation", { reason });
+    });
+  }
+
+  private triggerPrinterBlast() {
+    const printer = ROOM_PROPS.find((prop) => prop.id === "worka-report");
+    if (!printer) return;
+    this.broadcast("officePrank", { kind: "paper", x: printer.x, y: printer.y });
+    this.state.players.forEach((player) => {
+      if (player.isCaught || player.isHidden) return;
+      const dx = player.x - printer.x;
+      const dy = player.y - printer.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > GAME_CONFIG.PRINTER_BLAST_RADIUS_PX) return;
+      const safeDistance = Math.max(1, distance);
+      const pushed = resolveWallSlide(
+        player.x,
+        player.y,
+        player.x + (dx / safeDistance) * GAME_CONFIG.PRINTER_BLAST_PUSH_PX,
+        player.y + (dy / safeDistance) * GAME_CONFIG.PRINTER_BLAST_PUSH_PX,
+        16
+      );
+      player.x = pushed.x;
+      player.y = pushed.y;
+      if (player.role === "hider") this.revealPolicyViolation(player, "HIT BY FLYING PAPER");
+    });
   }
 
   private updateListing() {
@@ -405,16 +497,31 @@ export class GameRoom extends Room<GameState> {
 
       let target: { x: number; y: number } | undefined;
       if (bot.role === "seeker") {
+        const policyTarget = this.botPolicyTargets.get(bot.id);
+        if (policyTarget && policyTarget.expiresAt > Date.now()) {
+          target = policyTarget;
+          if (Math.hypot(bot.x - policyTarget.x, bot.y - policyTarget.y) <= GAME_CONFIG.INSPECT_RANGE_PX) {
+            const hider = this.state.players.get(policyTarget.playerId);
+            this.botPolicyTargets.delete(bot.id);
+            if (hider && !hider.isCaught && Math.hypot(hider.x - policyTarget.x, hider.y - policyTarget.y) <= GAME_CONFIG.INSPECT_RANGE_PX) {
+              if (hider.isHidden) this.freeCoverPoint(hider.coverPointId, hider.id);
+              this.resolveCatch(undefined, bot, hider);
+              continue;
+            }
+          }
+        } else if (policyTarget) {
+          this.botPolicyTargets.delete(bot.id);
+        }
         const exposed = [...this.state.players.values()]
           .filter((player) => player.role === "hider" && !player.isCaught && !player.isEscaped && !player.isHidden)
           .sort((a, b) => Math.hypot(bot.x - a.x, bot.y - a.y) - Math.hypot(bot.x - b.x, bot.y - b.y))[0];
-        if (exposed) {
+        if (!target && exposed) {
           target = exposed;
           if (Math.hypot(bot.x - exposed.x, bot.y - exposed.y) <= GAME_CONFIG.TAG_RANGE_PX) {
             this.resolveCatch(undefined, bot, exposed);
             continue;
           }
-        } else {
+        } else if (!target) {
           const occupied = [...this.coverOccupants.keys()][0];
           const cp = occupied ? this.state.coverPoints.get(occupied) : undefined;
           if (cp) {
@@ -725,6 +832,11 @@ export class GameRoom extends Room<GameState> {
     this.scanCooldownUntil.clear();
     this.traceCooldownUntil.clear();
     this.personalHideCooldownUntil.clear();
+    this.ghostPrankCooldownUntil.clear();
+    this.corporateEventDeck = [];
+    this.nextCorporateEventAt = GAME_CONFIG.CORPORATE_EVENT_FIRST_SEC;
+    this.freezeViolators.clear();
+    this.botPolicyTargets.clear();
     // Furniture stays coherent with the office, but which pieces are genuine
     // cover changes every round. The remainder behave as indistinguishable
     // decoys, so memorising last round's answers does not help.
@@ -741,6 +853,8 @@ export class GameRoom extends Room<GameState> {
     this.missionQueue = shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND);
     this.state.missionsCompleted = 0;
     this.state.missionGoal = MISSIONS_PER_ROUND;
+    this.state.corporateEvent = "";
+    this.state.corporateEventTime = 0;
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
     this.updateListing();
@@ -789,6 +903,8 @@ export class GameRoom extends Room<GameState> {
     if (survivors.length === 1) survivors[0].score += GAME_CONFIG.SCORE.LAST_SURVIVOR_BONUS;
 
     this.state.relocateActive = false;
+    this.state.corporateEvent = "";
+    this.state.corporateEventTime = 0;
     this.state.darkRooms.clear();
     this.state.phase = "result";
     this.state.timeRemaining = GAME_CONFIG.RESULT_SEC;
@@ -822,11 +938,25 @@ export class GameRoom extends Room<GameState> {
     const nextY = Math.max(0, Math.min(MAP_HEIGHT, message.y));
     if (!player.isCaught && collidesWithAnyWall(nextX, nextY)) return; // ghosts float through walls
 
+    const previousX = player.x;
+    const previousY = player.y;
     player.x = nextX;
     player.y = nextY;
     player.anim = message.anim;
     if (Number.isFinite(message.rotY)) player.rotY = message.rotY;
     this.lastMoveAt.set(client.sessionId, now);
+
+    if (
+      this.state.phase === "seek" &&
+      this.state.corporateEvent === "freeze_review" &&
+      player.role === "hider" &&
+      !player.isCaught &&
+      Math.hypot(player.x - previousX, player.y - previousY) > 0.8 &&
+      !this.freezeViolators.has(player.id)
+    ) {
+      this.freezeViolators.add(player.id);
+      this.revealPolicyViolation(player, "MOVED DURING REVIEW");
+    }
 
     if (player.role === "seeker") this.checkStunTraps(player);
 
@@ -873,6 +1003,13 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
+  private broadcastToSeekers(type: string, payload: unknown) {
+    this.clients.forEach((client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player?.role === "seeker" && !player.isCaught) client.send(type, payload);
+    });
+  }
+
   private handleUseItem(client: Client) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isHidden || !player.heldItem) return;
@@ -912,10 +1049,30 @@ export class GameRoom extends Room<GameState> {
     const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
     if (!mission || !prop || !this.state.missions.has(mission.id) || this.state.missions.get(mission.id)) return;
     if (Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
-    this.missionStartedAt.set(client.sessionId, { missionId: mission.id, startedAt: Date.now() });
+    if (Date.now() < (this.missionCooldownUntil.get(client.sessionId) ?? 0)) return;
+    const keys = ["W", "A", "S", "D"];
+    const sequence = Array.from({ length: GAME_CONFIG.MISSION_CHALLENGE_LENGTH }, () => keys[Math.floor(Math.random() * keys.length)]).join("");
+    this.missionStartedAt.set(client.sessionId, { missionId: mission.id, startedAt: Date.now(), sequence });
+    client.send("missionChallenge", {
+      missionId: mission.id,
+      title: mission.title,
+      sequence: sequence.split(""),
+      durationMs: GAME_CONFIG.MISSION_CHALLENGE_DURATION_MS,
+    });
   }
 
-  private handleCompleteMission(client: Client, message: { missionId?: string }) {
+  private handleFailMission(client: Client, message: { missionId?: string }) {
+    const interaction = this.missionStartedAt.get(client.sessionId);
+    if (!interaction || interaction.missionId !== message?.missionId) return;
+    this.missionStartedAt.delete(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.isCaught) return;
+    this.missionCooldownUntil.set(client.sessionId, Date.now() + 2500);
+    this.broadcast("officePrank", { kind: "mission_fail", x: player.x, y: player.y, nickname: player.nickname });
+    this.revealPolicyViolation(player, "MISSION FAILED — TOO NOISY");
+  }
+
+  private handleCompleteMission(client: Client, message: { missionId?: string; sequence?: string }) {
     if (this.state.phase !== "seek") return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isEscaped || player.isHidden) return;
@@ -923,7 +1080,14 @@ export class GameRoom extends Room<GameState> {
     const now = Date.now();
     const interaction = this.missionStartedAt.get(client.sessionId);
     this.missionStartedAt.delete(client.sessionId);
-    if (!interaction || interaction.missionId !== message.missionId || now - interaction.startedAt < GAME_CONFIG.MISSION_INTERACTION_MS - 100) return;
+    if (
+      !interaction ||
+      interaction.missionId !== message.missionId ||
+      !interaction.sequence ||
+      message.sequence !== interaction.sequence ||
+      now - interaction.startedAt < 100 ||
+      now - interaction.startedAt > GAME_CONFIG.MISSION_CHALLENGE_DURATION_MS + 500
+    ) return;
     if (now < (this.missionCooldownUntil.get(client.sessionId) ?? 0)) return;
     const mission = MISSION_POOL.find((candidate) => candidate.id === message.missionId);
     const prop = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
@@ -1132,6 +1296,21 @@ export class GameRoom extends Room<GameState> {
       characterVariant: player.characterVariant,
       durationMs: 5000,
     });
+  }
+
+  private handleGhostPrank(client: Client) {
+    const ghost = this.state.players.get(client.sessionId);
+    if (!ghost?.isCaught || this.state.phase !== "seek") return;
+    const now = Date.now();
+    const remainingMs = (this.ghostPrankCooldownUntil.get(client.sessionId) ?? 0) - now;
+    if (remainingMs > 0) {
+      client.send("ghostPrankCooldown", { remainingMs });
+      return;
+    }
+    this.ghostPrankCooldownUntil.set(client.sessionId, now + GAME_CONFIG.GHOST_PRANK_COOLDOWN_MS);
+    this.broadcast("officePrank", { kind: "ghost", x: ghost.x, y: ghost.y, nickname: ghost.nickname });
+    this.broadcastToSeekers("decoyNoise", { x: ghost.x, y: ghost.y });
+    client.send("ghostPrankCooldown", { remainingMs: GAME_CONFIG.GHOST_PRANK_COOLDOWN_MS });
   }
 
   // Any player triggers whichever room-prop gimmick they're standing next

@@ -67,6 +67,15 @@ export const GAME_CONFIG = {
   // a short cooldown after each completion forces some travel time between them.
   MISSION_COOLDOWN_MS: 12000,
   MISSION_INTERACTION_MS: 3000,
+  MISSION_CHALLENGE_DURATION_MS: 7000,
+  MISSION_CHALLENGE_LENGTH: 4,
+  CORPORATE_EVENT_FIRST_SEC: 18,
+  CORPORATE_EVENT_INTERVAL_SEC: 38,
+  CORPORATE_EVENT_DURATION_SEC: 12,
+  POLICY_REVEAL_DURATION_MS: 3500,
+  PRINTER_BLAST_RADIUS_PX: 150,
+  PRINTER_BLAST_PUSH_PX: 65,
+  GHOST_PRANK_COOLDOWN_MS: 20000,
   EXIT_SCORE: 100,
   // Seeker's "scan" ability (F key) — a one-shot reveal of hidden hiders
   // within radius, sent as a private snapshot message (not a live schema

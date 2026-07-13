@@ -403,3 +403,21 @@ git status
 - ปรับ master gain และ envelope ให้สนุกขึ้นแต่ไม่กลบ SFX/เสียงแจ้งเตือน gameplay
 - ใช้ Web Audio ทั้งหมด ไม่เพิ่ม asset download และยังรองรับ SOUND ON/OFF พร้อมค่าที่จำไว้
 - ตรวจ client/server production build ผ่าน
+
+## Office Chaos Gameplay Vertical Slice
+
+- เพิ่ม `Corporate Events` ระหว่างช่วง SEEK โดยเริ่มหลัง 18 วินาทีและเกิดซ้ำทุกประมาณ 38 วินาที
+- `Mandatory Meeting`: Hider ต้องไปถึง Meeting Room ก่อนหมดเวลา ผู้ที่ไม่ไปถูกเปิดตำแหน่งให้ Office Patrol ชั่วคราว ส่วนผู้ที่ทำตามได้ 10 คะแนน
+- `Performance Review`: ประกาศให้หยุดนิ่ง Hider ที่ขยับระหว่างตรวจผลงานจะเกิด Policy Violation และถูกเปิดตำแหน่ง
+- Office Bot ที่เป็น Seeker รับตำแหน่ง Policy Violation และวิ่งไปตรวจจุดนั้นได้เช่นเดียวกับ Seeker ที่เป็นผู้เล่นจริง
+- `Printer Meltdown`: Report Terminal ใน Work Zone A ยิงกระดาษสองระลอก ผลักผู้เล่นที่อยู่ใกล้และเปิดตำแหน่ง Hider ที่โดน
+- เพิ่ม banner กลางจอพร้อมชื่อ Event, คำสั่ง และเวลาที่เหลือ รองรับผู้เล่น reconnect ผ่าน Colyseus state
+- เปลี่ยน Mission จากกด E ค้างเป็นกด E แล้วทำ WASD sequence 4 ปุ่มภายใน 7 วินาที
+- Sequence สุ่มและเก็บฝั่ง server; server ตรวจคำตอบ, ระยะ, เวลา, role และ cooldown ก่อนให้คะแนน
+- กดปุ่มผิดหรือปล่อยให้หมดเวลาทำให้เครื่องใช้สำนักงานระเบิดกระดาษ ส่งเสียง และเปิดตำแหน่งผู้ทำพลาดให้ Seeker ชั่วคราว
+- เพิ่ม HUD `OFFICE SKILL CHECK` แสดงปุ่มปัจจุบัน ความคืบหน้า เวลาคงเหลือ และผลของการกดผิด
+- เพิ่ม `Ghost Prank`: ผู้ถูกจับหรือ Escape กด Q ทุก 20 วินาทีเพื่อสร้าง printer alert ปลอมและ decoy noise หลอก Seeker จากตำแหน่ง Ghost
+- Ghost ยังคงกด C เพื่อสลับกล้องผู้รอด และ HUD แสดง cooldown ของ Prank
+- เพิ่ม paper-burst 3D effect สำหรับ Printer Meltdown, Mission fail และ Ghost Prank
+- อัปเดต Landing How to Play และ Help panel ให้ตรงกับระบบ Mission แบบใหม่
+- ทดสอบ local ด้วยผู้เล่นหนึ่งคน + Office Bot สามตัว: Corporate Event sync, banner/countdown, Ghost Prank และ cooldown ทำงาน; client/server production build ผ่าน
