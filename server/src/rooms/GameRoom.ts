@@ -13,6 +13,7 @@ import {
   collidesWithAnyWall,
   resolveWallSlide,
   findRoomAt,
+  type RoomSpec,
 } from "../../../shared/mapLayout.js";
 import { CoverPoint } from "../schema/CoverPoint.js";
 import {
@@ -30,9 +31,30 @@ import {
   type UsePropMessage,
   type ItemKind,
 } from "../../../shared/messages.js";
-import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS } from "../../../shared/missions.js";
+import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS, type MissionDef } from "../../../shared/missions.js";
 
 const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
+// ~0.8s of sidestepping once a bot commits to a detour (see resolveBotStep) —
+// long enough to clear a typical wall corner or cubicle-divider pocket on
+// this map without wandering far off course.
+const DETOUR_BURST_TICKS = 12;
+
+// World-space center of each of a room's doorways — same math buildRoomWalls
+// (mapLayout.ts) uses internally to place the wall gaps, just returning the
+// midpoint instead of the wall segments. Used by nextBotWaypoint below so a
+// bot heading for a target in another room aims at an actual opening instead
+// of a straight line that's very likely to run into a solid wall between here
+// and there (bots have no real pathfinding).
+function doorCenters(room: RoomSpec): { x: number; y: number }[] {
+  return room.doors.map((door) => {
+    const horizontal = door.side === "top" || door.side === "bottom";
+    const along = (horizontal ? room.x : room.y) + door.at + door.width / 2;
+    const fixed =
+      door.side === "top" ? room.y : door.side === "bottom" ? room.y + room.h : door.side === "left" ? room.x : room.x + room.w;
+    return horizontal ? { x: along, y: fixed } : { x: fixed, y: along };
+  });
+}
+
 
 // Looks identical to a real cover point client-side, but can never actually
 // hide anyone — computed once from the shared map data rather than kept in
@@ -93,6 +115,28 @@ export class GameRoom extends Room<GameState> {
   private roundDecoyCoverPointIds = new Set<string>();
   private personalHideCooldownUntil = new Map<string, number>();
   private botTargets = new Map<string, { x: number; y: number }>();
+  // Bots have no real pathfinding (just a straight line to their target), so
+  // a fixed-point goal — a mission prop, a hider being chased — can leave
+  // them stuck dead against a wall they aren't lined up with a door for.
+  // These track how long a bot has made no progress and which way it's
+  // sidestepping to get around the obstruction (see resolveBotStep).
+  private botStuckTicks = new Map<string, number>();
+  private botDetourSign = new Map<string, number>();
+  private botDetourTicks = new Map<string, number>();
+  // Some rooms on this map have internal furniture dividers that split them
+  // into sub-areas only reachable via DIFFERENT doors (e.g. a divider plus a
+  // wall leaving literally zero gap for a player-sized circle at one exact
+  // spot) — the geometrically nearest door isn't always the reachable one
+  // from wherever the bot happens to be standing. Counts how many detour
+  // bursts have failed to make real progress, so nextBotWaypoint can cycle
+  // to a different door of the room instead of retrying the same blocked one.
+  private botDoorCycle = new Map<string, number>();
+  // Last-resort tracking: some furniture layouts pin a bot in a pocket that
+  // even door-cycling and sidestep bursts can't solve (no real pathfinding
+  // will handle every arrangement). If a bot hasn't moved at all for several
+  // seconds straight, it gets force-nudged toward open space — see the
+  // "genuinely gnarly pocket" branch in tickBots.
+  private botFrozenSince = new Map<string, number>();
   private isPublicRoom = false;
   private roomTitle = "Public Office";
 
@@ -264,6 +308,93 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
+  // Bots have no real pathfinding — a mission prop, a chased hider, or a
+  // cover point in another room is very often not reachable by a straight
+  // line at all (a wall sits directly between here and there with the door
+  // nowhere near that line). Rather than solving a full path, aim for a
+  // doorway first; once the bot is actually inside the right room, this
+  // starts returning the real target directly.
+  private nextBotWaypoint(bot: Player, finalTarget: { x: number; y: number }): { x: number; y: number } {
+    const targetRoom = findRoomAt(finalTarget.x, finalTarget.y);
+    if (!targetRoom) return finalTarget; // target isn't inside any room (open floor) — go direct
+
+    const botRoom = findRoomAt(bot.x, bot.y);
+    if (botRoom?.id === targetRoom.id) {
+      this.botDoorCycle.delete(bot.id);
+      return finalTarget;
+    }
+
+    // Rooms on this map mostly connect to the shared open cubicle floor, not
+    // directly to each other — aiming straight at some OTHER room's door
+    // from inside a different room is very likely to run into THIS room's
+    // own walls first. Get out through this room's own door before worrying
+    // about the target room's door at all.
+    const room = botRoom && botRoom.doors.length > 0 ? botRoom : targetRoom.doors.length > 0 ? targetRoom : undefined;
+    if (!room) return finalTarget;
+
+    // Some rooms have an internal furniture divider that splits them into
+    // sub-areas only reachable via DIFFERENT doors — the geometrically
+    // nearest door isn't always the one actually reachable from wherever the
+    // bot is standing. After repeated stuck cycles trying one door, cycle to
+    // the room's other door(s) instead of grinding against the same one.
+    const doors = doorCenters(room).sort((a, b) => Math.hypot(bot.x - a.x, bot.y - a.y) - Math.hypot(bot.x - b.x, bot.y - b.y));
+    const cycle = this.botDoorCycle.get(bot.id) ?? 0;
+    return doors[Math.floor(cycle / 2) % doors.length];
+  }
+
+  // One bot's movement step toward `target` this tick, with a fallback for
+  // when the direct line is wall-blocked. `resolveWallSlide` alone (same as
+  // real player prediction) handles a glancing corner fine, but a target
+  // directly behind a solid wall segment — or pinned in a tight pocket, e.g.
+  // a room's outer wall on one side and a cubicle divider on the other —
+  // can leave the direct line blocked on both axes every tick forever.
+  // Testing this against the real map found that resuming the direct line
+  // the instant a single sidestep tick succeeds just re-traps the bot in the
+  // same pocket a tick later (a stable back-and-forth with zero net
+  // progress) — so once stuck, commit to a whole burst of sidestepping
+  // (DETOUR_BURST_TICKS) before ever re-testing the direct line again,
+  // giving it enough clearance to actually get past the obstruction.
+  private resolveBotStep(bot: Player, target: { x: number; y: number }, speed: number, dt: number): { x: number; y: number } {
+    const dx = target.x - bot.x;
+    const dy = target.y - bot.y;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    const stepLen = Math.min(distance, speed * dt);
+
+    const detourLeft = this.botDetourTicks.get(bot.id) ?? 0;
+    if (detourLeft <= 0) {
+      const desiredX = bot.x + (dx / distance) * stepLen;
+      const desiredY = bot.y + (dy / distance) * stepLen;
+      const direct = resolveWallSlide(bot.x, bot.y, desiredX, desiredY, 16);
+      if (Math.hypot(direct.x - bot.x, direct.y - bot.y) > 0.5) {
+        this.botStuckTicks.delete(bot.id);
+        this.botDetourSign.delete(bot.id);
+        return direct;
+      }
+
+      const stuckTicks = (this.botStuckTicks.get(bot.id) ?? 0) + 1;
+      this.botStuckTicks.set(bot.id, stuckTicks);
+      if (stuckTicks < 3) return { x: bot.x, y: bot.y };
+      this.botDetourTicks.set(bot.id, DETOUR_BURST_TICKS);
+      this.botStuckTicks.set(bot.id, 0);
+      this.botDoorCycle.set(bot.id, (this.botDoorCycle.get(bot.id) ?? 0) + 1);
+    }
+
+    this.botDetourTicks.set(bot.id, Math.max(0, (this.botDetourTicks.get(bot.id) ?? DETOUR_BURST_TICKS) - 1));
+    let sign = this.botDetourSign.get(bot.id);
+    if (sign === undefined) {
+      sign = Math.random() < 0.5 ? 1 : -1;
+      this.botDetourSign.set(bot.id, sign);
+    }
+    const perpAngle = Math.atan2(dy, dx) + sign * (Math.PI / 2);
+    const sideStep = resolveWallSlide(bot.x, bot.y, bot.x + Math.cos(perpAngle) * stepLen, bot.y + Math.sin(perpAngle) * stepLen, 16);
+    if (Math.hypot(sideStep.x - bot.x, sideStep.y - bot.y) < 0.5) {
+      // The sidestep direction is ALSO blocked (boxed in on 3+ sides) — flip
+      // which way we try for the rest of this burst instead of grinding.
+      this.botDetourSign.set(bot.id, -sign);
+    }
+    return sideStep;
+  }
+
   private tickBots() {
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
     const dt = BOT_TICK_MS / 1000;
@@ -298,21 +429,56 @@ export class GameRoom extends Room<GameState> {
           }
         }
       } else {
-        const nearby = [...this.state.coverPoints.values()].find((cp) =>
-          !cp.isOccupied && !this.roundDecoyCoverPointIds.has(cp.id) && Math.hypot(bot.x - cp.x, bot.y - cp.y) < GAME_CONFIG.HIDE_RANGE_PX
-        );
-        if (nearby && Math.random() < 0.18) {
-          nearby.isOccupied = true;
-          this.coverOccupants.set(nearby.id, bot.id);
-          bot.isHidden = true;
-          bot.coverPointId = nearby.id;
-          this.clock.setTimeout(() => {
-            if (!bot.isHidden || bot.coverPointId !== nearby.id) return;
-            this.freeCoverPoint(nearby.id, bot.id);
-            bot.isHidden = false;
-            bot.coverPointId = "";
-          }, GAME_CONFIG.BOT_HIDE_DURATION_MS);
-          continue;
+        // Work the current active office mission the same way a real hider
+        // does — walk to its prop, hold still for MISSION_INTERACTION_MS,
+        // then complete it. Bots previously had no mission-seeking behavior
+        // at all (only hide-at-cover-point or roam), so they never helped
+        // progress toward unlocking the exit.
+        const activeMissionId = this.state.phase === "seek"
+          ? [...this.state.missions.entries()].find(([, completed]) => !completed)?.[0]
+          : undefined;
+        const mission = activeMissionId ? MISSION_POOL.find((candidate) => candidate.id === activeMissionId) : undefined;
+        const missionProp = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
+
+        if (mission && missionProp && Math.hypot(bot.x - missionProp.x, bot.y - missionProp.y) <= GAME_CONFIG.ROOM_PROP_RANGE_PX) {
+          const now = Date.now();
+          const interaction = this.missionStartedAt.get(bot.id);
+          if (!interaction || interaction.missionId !== mission.id) {
+            this.missionStartedAt.set(bot.id, { missionId: mission.id, startedAt: now });
+          } else if (
+            now - interaction.startedAt >= GAME_CONFIG.MISSION_INTERACTION_MS &&
+            now >= (this.missionCooldownUntil.get(bot.id) ?? 0) &&
+            this.state.missions.has(mission.id) &&
+            !this.state.missions.get(mission.id)
+          ) {
+            this.missionStartedAt.delete(bot.id);
+            this.missionCooldownUntil.set(bot.id, now + GAME_CONFIG.MISSION_COOLDOWN_MS);
+            this.applyMissionCompletion(bot, mission);
+          }
+          bot.anim = "idle";
+          continue; // standing still "holding" the mission this tick
+        }
+        this.missionStartedAt.delete(bot.id);
+
+        if (missionProp) {
+          target = missionProp;
+        } else {
+          const nearby = [...this.state.coverPoints.values()].find((cp) =>
+            !cp.isOccupied && !this.roundDecoyCoverPointIds.has(cp.id) && Math.hypot(bot.x - cp.x, bot.y - cp.y) < GAME_CONFIG.HIDE_RANGE_PX
+          );
+          if (nearby && Math.random() < 0.18) {
+            nearby.isOccupied = true;
+            this.coverOccupants.set(nearby.id, bot.id);
+            bot.isHidden = true;
+            bot.coverPointId = nearby.id;
+            this.clock.setTimeout(() => {
+              if (!bot.isHidden || bot.coverPointId !== nearby.id) return;
+              this.freeCoverPoint(nearby.id, bot.id);
+              bot.isHidden = false;
+              bot.coverPointId = "";
+            }, GAME_CONFIG.BOT_HIDE_DURATION_MS);
+            continue;
+          }
         }
       }
 
@@ -326,24 +492,46 @@ export class GameRoom extends Room<GameState> {
       }
       const dx = target.x - bot.x;
       const dy = target.y - bot.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
       const speed = bot.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
-      const desiredX = bot.x + (dx / distance) * Math.min(distance, speed * dt);
-      const desiredY = bot.y + (dy / distance) * Math.min(distance, speed * dt);
-      // Slide along whichever axis is still open (same resolveWallSlide a
-      // real player's client prediction uses) instead of freezing solid the
-      // instant the direct line to the target clips a wall corner.
-      const resolved = resolveWallSlide(bot.x, bot.y, desiredX, desiredY, 16);
+      const waypoint = this.nextBotWaypoint(bot, target);
+      const resolved = this.resolveBotStep(bot, waypoint, speed, dt);
       const moved = Math.hypot(resolved.x - bot.x, resolved.y - bot.y);
       if (moved > 0.5) {
         bot.x = resolved.x;
         bot.y = resolved.y;
         bot.rotY = Math.atan2(dx, dy);
         bot.anim = "walk";
+        this.botFrozenSince.delete(bot.id);
       } else {
-        // Genuinely blocked on both axes — drop this target so the next
-        // tick picks a fresh one instead of grinding against the same wall.
-        this.botTargets.delete(bot.id);
+        if (this.botTargets.get(bot.id) === target) {
+          // Genuinely blocked even after the sidestep attempt in
+          // resolveBotStep — only a roam target can just be swapped for a
+          // fresh random one; a mission prop or a chased hider is a fixed
+          // point worth continuing to work at next tick instead of abandoning.
+          this.botTargets.delete(bot.id);
+        }
+        const frozenSince = this.botFrozenSince.get(bot.id) ?? Date.now();
+        this.botFrozenSince.set(bot.id, frozenSince);
+        if (Date.now() - frozenSince > 3000) {
+          // Last resort: every heuristic above (direct line, wall-slide,
+          // perpendicular detour bursts, cycling to the room's other door)
+          // has failed to move this bot at all for multiple seconds
+          // straight — a genuinely gnarly furniture pocket, not something
+          // worth chasing with real pathfinding for a bot. Force a nudge
+          // toward the room's open center (bypassing collision — the whole
+          // point is a guaranteed escape) so it's never stuck for the rest
+          // of the round.
+          const stuckRoom = findRoomAt(bot.x, bot.y);
+          const escapeTarget = stuckRoom ? { x: stuckRoom.x + stuckRoom.w / 2, y: stuckRoom.y + stuckRoom.h / 2 } : randomHiderSpawn();
+          const edx = escapeTarget.x - bot.x;
+          const edy = escapeTarget.y - bot.y;
+          const edist = Math.max(1, Math.hypot(edx, edy));
+          const nudge = Math.min(edist, speed * dt * 3);
+          bot.x += (edx / edist) * nudge;
+          bot.y += (edy / edist) * nudge;
+          bot.anim = "walk";
+          this.botFrozenSince.delete(bot.id);
+        }
       }
     }
   }
@@ -742,6 +930,13 @@ export class GameRoom extends Room<GameState> {
     if (!mission || !prop || Math.hypot(player.x - prop.x, player.y - prop.y) > GAME_CONFIG.ROOM_PROP_RANGE_PX) return;
 
     this.missionCooldownUntil.set(client.sessionId, now + GAME_CONFIG.MISSION_COOLDOWN_MS);
+    this.applyMissionCompletion(player, mission);
+  }
+
+  // Shared "a mission just got finished" side effects — used by both a real
+  // player's handleCompleteMission and a bot's tickBots hold-still logic, so
+  // scoring/broadcast/exit-unlock behavior can never drift between the two.
+  private applyMissionCompletion(player: Player, mission: MissionDef) {
     this.state.missions.delete(mission.id);
     this.state.missionsCompleted += 1;
     player.score += MISSION_SCORE;
