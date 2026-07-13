@@ -28,7 +28,18 @@ function buildPlaceholder(): THREE.Mesh {
     new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
   );
   mesh.position.y = 24;
+  mesh.castShadow = true;
   return mesh;
+}
+
+// The real shadow map (see main.ts/GameScreen.ts) makes this flat decal
+// redundant as a *shadow*, but it still reads as "contact with the ground"
+// at a glance the moment a character stops moving (no lag waiting for the
+// shadow map to resolve) — kept, just explicitly opted out of casting/
+// receiving the real thing so it doesn't double up or shadow itself.
+function markAsDecal(mesh: THREE.Mesh) {
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
 }
 
 export class Character3D {
@@ -56,6 +67,7 @@ export class Character3D {
     );
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.5;
+    markAsDecal(shadow);
     this.group.add(shadow);
 
     this.modelRoot = buildPlaceholder();
@@ -92,6 +104,9 @@ export class Character3D {
     disposeObject(this.modelRoot);
 
     clone.scene.scale.setScalar(MODEL_SCALE);
+    clone.scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.castShadow = true;
+    });
     this.modelRoot = clone.scene;
     this.group.add(this.modelRoot);
 

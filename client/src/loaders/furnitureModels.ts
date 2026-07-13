@@ -11,18 +11,24 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 // "light-switch" (no dedicated siren/switch model in this pack and both are
 // tiny/low visual priority — not worth a mismatched substitute).
 //
-// Kinds that repeat many times across the map (desk/cabinet/server-rack/
-// shelf/sofa/chair) get MULTIPLE model variants instead of one — every
-// instance otherwise renders the exact same mesh, which is what read as
-// "too repetitive" once there were 6-9+ of them in view at once.
+// Also deliberately left out despite the pack having *a* candidate model:
+// "desk" (the procedural version is a composed desk+monitor+chair "cubicle
+// set" — swapping it for a bare desk.glb would silently throw away the
+// monitor and chair, since only the desk itself is a registered kind here)
+// and "server-rack" (the only candidate is a TV cabinet — cabinetTelevision*
+// — which doesn't read as a server rack at all, and swapping it would also
+// drop the blinking-LED detail baked into that same procedural group).
+//
+// Kinds that repeat many times across the map (cabinet/shelf/sofa/chair)
+// get MULTIPLE model variants instead of one — every instance otherwise
+// renders the exact same mesh, which is what read as "too repetitive" once
+// there were 6-9+ of them in view at once.
 export const FURNITURE_MODEL_VARIANTS: Record<string, string[]> = {
-  desk: ["/models/furniture/desk.glb", "/models/furniture/deskCorner.glb"],
   cabinet: [
     "/models/furniture/kitchenCabinet.glb",
     "/models/furniture/kitchenCabinetDrawer.glb",
     "/models/furniture/bookcaseClosed.glb",
   ],
-  "server-rack": ["/models/furniture/cabinetTelevision.glb", "/models/furniture/cabinetTelevisionDoors.glb"],
   plant: ["/models/furniture/pottedPlant.glb"],
   shelf: ["/models/furniture/bookcaseOpen.glb", "/models/furniture/bookcaseOpenLow.glb"],
   sofa: [

@@ -252,6 +252,8 @@ export class GameScreen implements Screen {
   private prevDimForLights = false;
   private ambientLight!: THREE.AmbientLight;
   private sunLight!: THREE.DirectionalLight;
+  private groundMesh!: THREE.Mesh;
+  private roomFloorMeshes: THREE.Mesh[] = [];
   private darkRoomOverlays = new Map<string, { mesh: THREE.Mesh; opacity: number }>();
   private litRoomOverlays = new Map<string, { mesh: THREE.Mesh; opacity: number }>();
   // Real GLB furniture models load async; every cover point/prop starts as
@@ -483,6 +485,13 @@ export class GameScreen implements Screen {
     this.followTarget.lerp(this.desiredFollowTarget, 1 - Math.exp(-CAMERA_FOLLOW_DAMP * dt));
     this.camera.position.copy(this.followTarget).add(isoOffset(this.cameraAzimuth));
     this.camera.lookAt(this.followTarget);
+    // Keep the shadow-casting sun (and its fixed-size frustum) centered on
+    // wherever the camera is actually looking, not the map origin — see the
+    // frustum-size comment in buildWorld for why it can't just cover
+    // everything at once.
+    this.sunLight.position.set(this.followTarget.x + 300, this.followTarget.y + 500, this.followTarget.z + 200);
+    this.sunLight.target.position.copy(this.followTarget);
+    this.sunLight.target.updateMatrixWorld();
     this.renderer.render(this.scene, this.camera);
 
     this.updateHud(phase);
@@ -1293,6 +1302,22 @@ export class GameScreen implements Screen {
     this.sunLight = new THREE.DirectionalLight(0xf5f7fa, BASE_SUN_INTENSITY);
     this.sunLight.position.set(300, 500, 200);
     this.scene.add(this.sunLight);
+    // Shadow frustum is a fixed-size box that rides along with the sun
+    // (kept offset from `followTarget` every frame in update()) rather than
+    // covering the whole map at once — the map is thousands of units across,
+    // so a frustum that size would spread the shadow map's resolution too
+    // thin to read as anything but a blur.
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.camera.left = -420;
+    this.sunLight.shadow.camera.right = 420;
+    this.sunLight.shadow.camera.top = 420;
+    this.sunLight.shadow.camera.bottom = -420;
+    this.sunLight.shadow.camera.near = 10;
+    this.sunLight.shadow.camera.far = 1400;
+    this.sunLight.shadow.bias = -0.0018;
+    this.sunLight.target.position.set(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
+    this.scene.add(this.sunLight.target);
     const skyFill = new THREE.HemisphereLight(0xbfe8ff, 0x2b1d35, 0.32);
     this.scene.add(skyFill);
 
@@ -1309,6 +1334,25 @@ export class GameScreen implements Screen {
     this.buildLitRoomOverlays();
     this.buildSmokeItems();
     this.buildMissionMarkers();
+
+    // Broad opaque-mesh shadow toggle instead of touching every individual
+    // builder call above — cheaper to maintain than threading castShadow/
+    // receiveShadow through each one, and safe because the only meshes that
+    // truly shouldn't shadow (floor labels, room-tint overlays, minimap-style
+    // decals, beacon/reveal effects) are already the transparent,
+    // depthWrite:false planes this filter skips.
+    this.scene.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mat = obj.material as THREE.Material | THREE.Material[];
+      const isDecalOverlay = !Array.isArray(mat) && mat.transparent && mat.depthWrite === false;
+      if (isDecalOverlay) return;
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+    });
+    // The ground/room floors sit exactly at the shadow-receiving plane —
+    // letting them also cast is pure self-shadow-acne risk for zero benefit.
+    this.groundMesh.castShadow = false;
+    this.roomFloorMeshes.forEach((floor) => (floor.castShadow = false));
   }
 
   private buildMissionMarkers() {
@@ -1633,6 +1677,7 @@ export class GameScreen implements Screen {
       floor.rotation.x = -Math.PI / 2;
       floor.position.set(room.x + room.w / 2, 0.35, room.y + room.h / 2);
       this.scene.add(floor);
+      this.roomFloorMeshes.push(floor);
 
       // Room-specific floor language: circuits, carpet bands, tiles or a
       // central rug. These are deliberately subtle so players/items stay legible.
@@ -1739,6 +1784,7 @@ export class GameScreen implements Screen {
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
     this.scene.add(mesh);
+    this.groundMesh = mesh;
   }
 
   private buildWalls() {
@@ -1922,6 +1968,7 @@ export class GameScreen implements Screen {
       model.position.copy(obj.position);
       model.position.y = 0;
       this.tintFurnitureForRoom(model, model.position.x, model.position.z);
+      this.enableShadowsFor(model);
       this.scene.add(model);
       this.scene.remove(obj);
       disposeObject3D(obj);
@@ -2236,6 +2283,7 @@ export class GameScreen implements Screen {
       model.scale.setScalar(FURNITURE_MODEL_SCALE);
       model.position.set(obj.position.x, 0, obj.position.z);
       this.tintFurnitureForRoom(model, model.position.x, model.position.z);
+      this.enableShadowsFor(model);
       this.scene.add(model);
       this.scene.remove(obj);
       disposeObject3D(obj);
@@ -2254,6 +2302,19 @@ export class GameScreen implements Screen {
     marker.rotation.x = -Math.PI / 2;
     marker.position.set(x, 0.55, z);
     this.scene.add(marker);
+  }
+
+  // Real furniture models swap in asynchronously, well after buildWorld's
+  // one-time shadow-enabling scene traverse already ran — every upgrade call
+  // site needs this itself or the swapped-in model silently stays
+  // shadowless.
+  private enableShadowsFor(root: THREE.Object3D) {
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
   }
 
   private tintFurnitureForRoom(root: THREE.Object3D, x: number, z: number) {

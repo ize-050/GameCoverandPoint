@@ -29,6 +29,11 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
+// Real-time shadow mapping — the single biggest "does this look real"
+// upgrade available without new art assets (everything before this was
+// flat-lit with only fake painted-on shadow decals under characters/plants).
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
 const screens = new ScreenManager();
