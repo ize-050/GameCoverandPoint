@@ -453,3 +453,15 @@ git status
 - แก้ปุ่ม `TH/EN` มุมขวาบนถูก scrollbar ตัดในหน้า Landing โดยเพิ่มระยะจากขอบ 20px และรองรับ `safe-area-inset-right`
 - ในหน้า Game ขยับปุ่มภาษาไปทางซ้าย 78px เพื่อไม่ทับปุ่ม Help ขณะที่ minimap ด้านล่างยังอยู่ตำแหน่งเดิม
 - ใช้ตำแหน่งตาม screen ปัจจุบัน จึงไม่ต้อง reload และไม่กระทบระบบ Lobby/reconnect
+
+## Supabase Accounts, Profile, XP และ Stats
+
+- ย้ายโครง Google Login จาก custom Google token/session ไปใช้ Supabase Auth พร้อม session refresh ของ Supabase
+- Guest ID ในเครื่องและ Guest Play ยังทำงานเหมือนเดิม ผู้เล่นไม่ถูกบังคับ Login ก่อนเข้าเกม
+- Render ตรวจ Supabase access token ผ่าน Auth server ก่อนตั้ง verified badge ใน Lobby
+- เพิ่ม migration สำหรับ `profiles`, `player_stats`, `match_results`, `cosmetics`, `user_inventory` และ `recent_players` พร้อม foreign keys และ RLS
+- เพิ่ม trigger สร้าง Profile/Stats อัตโนมัติเมื่อ Google account สมัครครั้งแรก
+- เพิ่ม RPC `record_match_result` แบบ idempotent: บันทึก Match เดิมซ้ำไม่ได้ และเปิดให้เรียกเฉพาะ `service_role`
+- เก็บ performance ตลอด Match ได้แก่ Hider/Seeker wins, escapes, catches และ missions; Render คำนวณ XP/Coins และเขียน Supabase หลังจบ 3/5 รอบ
+- หน้า Account Card แสดง Level, XP, จำนวนเกม และจำนวน Escape จากข้อมูลถาวรของบัญชี
+- เพิ่ม tests สำหรับ participation reward, score scaling และ level curve

@@ -10,6 +10,8 @@ export class ResultScreen implements Screen {
   private navigate: Navigate;
   private room?: Room<GameState>;
   private overlay?: HTMLDivElement;
+  private unsubs: Array<() => void> = [];
+  private progress?: { xpEarned: number; coinsEarned: number };
   private stateChangeHandler = () => this.checkPhase();
 
   constructor(navigate: Navigate) {
@@ -17,11 +19,12 @@ export class ResultScreen implements Screen {
   }
 
   getRefreshData() {
-    return { room: this.room, skipJingle: true };
+    return { room: this.room, skipJingle: true, progress: this.progress };
   }
 
-  mount(data?: { room: Room<GameState>; skipJingle?: boolean }) {
+  mount(data?: { room: Room<GameState>; skipJingle?: boolean; progress?: { xpEarned: number; coinsEarned: number } }) {
     this.room = data?.room;
+    this.progress = data?.progress;
     if (!this.room) return;
 
     const hiderWon = [...this.room.state.players.values()].some((p) => p.role === "hider" && p.isEscaped);
@@ -62,10 +65,22 @@ export class ResultScreen implements Screen {
         <div class="hns-panel" style="display:flex;flex-direction:column;gap:6px;width:360px;">
           <div class="hns-label" style="margin-bottom:2px;">${t("result.scoreboard")}</div>
           ${rows}
+          <div id="progressEarned" style="display:none;margin-top:6px;padding:10px;border-radius:10px;text-align:center;background:#052e2bdd;border:1px solid #34d39966;color:#a7f3d0;font-weight:900;"></div>
           ${actionHtml}
         </div>
       </div>
     `;
+
+    const showProgress = (message: { xpEarned?: number; coinsEarned?: number }) => {
+      const element = this.overlay?.querySelector("#progressEarned") as HTMLDivElement | null;
+      if (!element) return;
+      this.progress = { xpEarned: Math.max(0, Number(message.xpEarned) || 0), coinsEarned: Math.max(0, Number(message.coinsEarned) || 0) };
+      element.textContent = t("result.progressEarned", { xp: this.progress.xpEarned, coins: this.progress.coinsEarned });
+      element.style.display = "block";
+    };
+    if (this.progress) showProgress(this.progress);
+    const offProgress = this.room.onMessage("progressEarned", showProgress);
+    this.unsubs.push(offProgress);
 
     this.room.onStateChange(this.stateChangeHandler);
 
@@ -75,6 +90,8 @@ export class ResultScreen implements Screen {
   }
 
   unmount() {
+    this.unsubs.forEach((unsubscribe) => unsubscribe());
+    this.unsubs = [];
     this.room?.onStateChange.remove(this.stateChangeHandler);
     if (this.overlay) removeOverlay(this.overlay);
     this.overlay = undefined;

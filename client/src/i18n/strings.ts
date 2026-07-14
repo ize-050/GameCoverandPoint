@@ -158,6 +158,7 @@ const STRINGS = {
     "result.scoreboard": "คะแนนสะสม",
     "result.escaped": "🚪 หนีสำเร็จ",
     "result.roundRest": "รอบ {round}/{total} · พักอีก {sec} วิ",
+    "result.progressEarned": "บันทึกความก้าวหน้าแล้ว · +{xp} XP · +{coins} Coins",
 
     // --- Language toggle ---
     "lang.toggle": "EN",
@@ -310,6 +311,7 @@ const STRINGS = {
     "result.scoreboard": "SCOREBOARD",
     "result.escaped": "🚪 ESCAPED",
     "result.roundRest": "ROUND {round}/{total} · resting {sec}s",
+    "result.progressEarned": "PROGRESS SAVED · +{xp} XP · +{coins} Coins",
 
     "lang.toggle": "ไทย",
     "audio.on": "Sound on",

@@ -1,3 +1,5 @@
+import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
+
 export interface AuthUser {
   id: string;
   displayName: string;
@@ -6,25 +8,27 @@ export interface AuthUser {
   provider: "google";
 }
 
-interface StoredSession { token: string; user: AuthUser }
+export interface PlayerProfile {
+  xp: number;
+  level: number;
+  coins: number;
+  gamesPlayed: number;
+  escapes: number;
+  catches: number;
+  missionsCompleted: number;
+}
 
 const GUEST_ID_KEY = "clockout_guest_id";
-const AUTH_SESSION_KEY = "clockout_auth_session";
-const GOOGLE_CLIENT_ID = String(import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "");
-const wsUrl = String(import.meta.env.VITE_SERVER_URL ?? "ws://localhost:2567");
-const API_URL = String(import.meta.env.VITE_API_URL ?? wsUrl.replace(/^ws/, "http")).replace(/\/$/, "");
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize(options: { client_id: string; callback: (response: { credential?: string }) => void }): void;
-          renderButton(element: HTMLElement, options: Record<string, string | number>): void;
-        };
-      };
-    };
-  }
+const AUTH_RETURN_KEY = "clockout_auth_return";
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL ?? "");
+const SUPABASE_KEY = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "");
+let supabasePromise: Promise<SupabaseClient | null> | undefined;
+function getSupabase(): Promise<SupabaseClient | null> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return Promise.resolve(null);
+  supabasePromise ??= import("@supabase/supabase-js").then(({ createClient }) =>
+    createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  );
+  return supabasePromise;
 }
 
 function newGuestId(): string {
@@ -32,39 +36,22 @@ function newGuestId(): string {
   return `guest-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-function readSession(): StoredSession | null {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) ?? "null") as StoredSession | null;
-    return parsed?.token && parsed.user?.id ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-let googleScriptPromise: Promise<void> | undefined;
-function loadGoogleScript(): Promise<void> {
-  if (window.google?.accounts.id) return Promise.resolve();
-  if (googleScriptPromise) return googleScriptPromise;
-  googleScriptPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
-    const script = existing ?? document.createElement("script");
-    script.addEventListener("load", () => resolve(), { once: true });
-    script.addEventListener("error", () => reject(new Error("GOOGLE_SCRIPT_FAILED")), { once: true });
-    if (!existing) {
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-  });
-  return googleScriptPromise;
+function toAuthUser(user: User): AuthUser {
+  return {
+    id: user.id,
+    displayName: String(user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Employee").slice(0, 40),
+    email: user.email ?? "",
+    picture: String(user.user_metadata?.avatar_url || user.user_metadata?.picture || ""),
+    provider: "google",
+  };
 }
 
 class AuthManager {
-  private session = readSession();
+  private session: Session | null = null;
+  private restored?: Promise<AuthUser | null>;
 
-  get user(): AuthUser | null { return this.session?.user ?? null; }
-  get isGoogleConfigured(): boolean { return Boolean(GOOGLE_CLIENT_ID); }
+  get user(): AuthUser | null { return this.session?.user ? toAuthUser(this.session.user) : null; }
+  get isGoogleConfigured(): boolean { return Boolean(SUPABASE_URL && SUPABASE_KEY); }
 
   getGuestId(): string {
     let guestId = localStorage.getItem(GUEST_ID_KEY) ?? "";
@@ -75,59 +62,80 @@ class AuthManager {
     return guestId;
   }
 
-  getRoomIdentity() {
-    return { guestId: this.getGuestId(), authToken: this.session?.token ?? "" };
+  consumeAuthReturn(): boolean {
+    const shouldReturn = sessionStorage.getItem(AUTH_RETURN_KEY) === "play";
+    sessionStorage.removeItem(AUTH_RETURN_KEY);
+    return shouldReturn;
+  }
+
+  async getRoomIdentity() {
+    await this.restore();
+    return { guestId: this.getGuestId(), authToken: this.session?.access_token ?? "" };
   }
 
   async restore(): Promise<AuthUser | null> {
-    if (!this.session) return null;
-    try {
-      const response = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${this.session.token}` } });
-      if (!response.ok) throw new Error("INVALID_SESSION");
-      const body = await response.json() as { user: AuthUser };
-      this.session.user = body.user;
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(this.session));
-      return body.user;
-    } catch {
-      this.signOut();
-      return null;
+    const supabase = await getSupabase();
+    if (!supabase) return null;
+    if (!this.restored) {
+      this.restored = (async () => {
+        const { data } = await supabase.auth.getSession();
+        this.session = data.session;
+        if (!this.session) return null;
+        const { data: verified, error } = await supabase.auth.getUser(this.session.access_token);
+        if (error || !verified.user) {
+          await supabase.auth.signOut({ scope: "local" });
+          this.session = null;
+          return null;
+        }
+        return toAuthUser(verified.user);
+      })();
     }
+    return this.restored;
   }
 
-  async renderGoogleButton(container: HTMLElement, onSignedIn: (user: AuthUser) => void, onError: (message: string) => void) {
-    if (!GOOGLE_CLIENT_ID) return;
-    try {
-      await loadGoogleScript();
-      if (!container.isConnected || !window.google?.accounts.id) return;
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async ({ credential }) => {
-          if (!credential) return onError("GOOGLE_CREDENTIAL_MISSING");
-          try {
-            const response = await fetch(`${API_URL}/auth/google`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ credential }),
-            });
-            if (!response.ok) throw new Error("GOOGLE_SIGN_IN_REJECTED");
-            this.session = await response.json() as StoredSession;
-            localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(this.session));
-            onSignedIn(this.session.user);
-          } catch {
-            onError("GOOGLE_SIGN_IN_REJECTED");
-          }
-        },
+  async renderGoogleButton(container: HTMLElement, _onSignedIn: (user: AuthUser) => void, onError: (message: string) => void) {
+    const supabase = await getSupabase();
+    if (!supabase || !container.isConnected) return;
+    container.innerHTML = "";
+    const button = document.createElement("button");
+    button.className = "hns-btn hns-btn-secondary";
+    button.style.cssText = "width:280px;background:#fff;color:#1f2937;border-color:#d1d5db;display:flex;align-items:center;justify-content:center;gap:10px;";
+    button.innerHTML = '<span style="font-size:18px;font-weight:950;color:#4285f4;">G</span><span>Continue with Google</span>';
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      sessionStorage.setItem(AUTH_RETURN_KEY, "play");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${location.origin}${location.pathname}` },
       });
-      container.innerHTML = "";
-      window.google.accounts.id.renderButton(container, { theme: "filled_black", size: "large", shape: "pill", width: 280, text: "continue_with" });
-    } catch {
-      onError("GOOGLE_SCRIPT_FAILED");
-    }
+      if (error) {
+        button.disabled = false;
+        onError(error.message);
+      }
+    });
+    container.appendChild(button);
   }
 
-  signOut() {
+  async loadProfile(): Promise<PlayerProfile | null> {
+    const supabase = await getSupabase();
+    if (!supabase || !this.session?.user) return null;
+    const userId = this.session.user.id;
+    const [{ data: profile }, { data: stats }] = await Promise.all([
+      supabase.from("profiles").select("xp,level,coins").eq("user_id", userId).maybeSingle(),
+      supabase.from("player_stats").select("games_played,escapes,catches,missions_completed").eq("user_id", userId).maybeSingle(),
+    ]);
+    return {
+      xp: Number(profile?.xp ?? 0), level: Number(profile?.level ?? 1), coins: Number(profile?.coins ?? 0),
+      gamesPlayed: Number(stats?.games_played ?? 0), escapes: Number(stats?.escapes ?? 0),
+      catches: Number(stats?.catches ?? 0), missionsCompleted: Number(stats?.missions_completed ?? 0),
+    };
+  }
+
+  async signOut() {
+    const supabase = await getSupabase();
+    if (supabase) await supabase.auth.signOut();
     this.session = null;
-    localStorage.removeItem(AUTH_SESSION_KEY);
+    this.restored = undefined;
   }
 }
 

@@ -56,7 +56,12 @@ export class MenuScreen implements Screen {
     this.overlay.innerHTML = this.template(data);
     this.wire();
     this.buildPreview();
-    if (data?.scrollTop) requestAnimationFrame(() => { if (this.overlay) this.overlay.scrollTop = data.scrollTop!; });
+    const returnToPlay = authManager.consumeAuthReturn();
+    if (data?.scrollTop || returnToPlay) requestAnimationFrame(() => {
+      if (!this.overlay) return;
+      if (returnToPlay) this.overlay.querySelector("#play")?.scrollIntoView({ block: "start" });
+      else this.overlay.scrollTop = data!.scrollTop!;
+    });
   }
 
   getRefreshData(): MenuRefreshData {
@@ -136,6 +141,7 @@ export class MenuScreen implements Screen {
           <div class="hns-panel play-panel">
             <div id="accountPanel" style="padding:12px;border:1px solid #ffffff1f;border-radius:14px;background:#080d18aa;display:flex;flex-direction:column;align-items:center;gap:9px;">
               <div id="accountIdentity" style="width:100%;display:flex;align-items:center;gap:10px;"></div>
+              <div id="accountProgress" style="display:none;width:100%;grid-template-columns:repeat(4,1fr);gap:6px;"></div>
               <div id="googleSignIn"></div>
               <button id="signOutBtn" class="hns-btn hns-btn-ghost" style="display:none;width:100%;">${tr("ออกจากบัญชี", "SIGN OUT")}</button>
               <div id="authHint" style="font-size:11px;color:#94a3b8;text-align:center;"></div>
@@ -203,6 +209,7 @@ export class MenuScreen implements Screen {
     const googleSignInEl = root.querySelector("#googleSignIn") as HTMLDivElement;
     const signOutBtn = root.querySelector("#signOutBtn") as HTMLButtonElement;
     const authHintEl = root.querySelector("#authHint") as HTMLDivElement;
+    const accountProgressEl = root.querySelector("#accountProgress") as HTMLDivElement;
 
     const renderAccount = (user: AuthUser | null = authManager.user) => {
       accountIdentityEl.innerHTML = "";
@@ -234,6 +241,17 @@ export class MenuScreen implements Screen {
           ? tr("Login เป็นทางเลือก — Guest ยังเล่นได้ตามปกติ", "Login is optional — Guest play remains available")
           : tr("Google Login กำลังเปิดใช้งาน · ตอนนี้เล่นแบบ Guest ได้เลย", "Google Login is being activated · Guest play is ready now");
       authHintEl.style.color = user ? "#86efac" : "#94a3b8";
+      accountProgressEl.style.display = "none";
+      accountProgressEl.innerHTML = "";
+      if (user) void authManager.loadProfile().then((profile) => {
+        if (!profile || this.overlay !== root || authManager.user?.id !== user.id) return;
+        const entries = [
+          [tr("เลเวล", "LEVEL"), profile.level], ["XP", profile.xp],
+          [tr("เกม", "GAMES"), profile.gamesPlayed], [tr("หนี", "ESCAPES"), profile.escapes],
+        ];
+        accountProgressEl.innerHTML = entries.map(([label, value]) => `<div style="padding:7px 4px;background:#111827;border-radius:8px;text-align:center;"><b style="display:block;color:#67e8f9;font-size:14px;">${value}</b><span style="font-size:9px;color:#94a3b8;">${label}</span></div>`).join("");
+        accountProgressEl.style.display = "grid";
+      });
     };
 
     const mountGoogleButton = () => {
@@ -250,7 +268,7 @@ export class MenuScreen implements Screen {
     renderAccount();
     mountGoogleButton();
     void authManager.restore().then((user) => { if (this.overlay === root) { renderAccount(user); mountGoogleButton(); } });
-    signOutBtn.addEventListener("click", () => { authManager.signOut(); renderAccount(null); mountGoogleButton(); });
+    signOutBtn.addEventListener("click", async () => { await authManager.signOut(); renderAccount(null); mountGoogleButton(); });
 
     const persistAppearance = () => localStorage.setItem(APPEARANCE_KEY, JSON.stringify(this.appearance));
 

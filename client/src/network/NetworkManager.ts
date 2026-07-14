@@ -26,7 +26,7 @@ export class NetworkManager {
 
   async createRoom(nickname: string, appearance: CharacterAppearance, visibility: "public" | "private" = "private", botCount = 0): Promise<Room<GameState>> {
     try {
-      const room = await this.client.create<GameState>("game", { nickname, appearance, visibility, botCount, ...authManager.getRoomIdentity() });
+      const room = await this.client.create<GameState>("game", { nickname, appearance, visibility, botCount, ...await authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {
@@ -48,7 +48,7 @@ export class NetworkManager {
 
   async joinPublicRoom(roomId: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
     try {
-      const room = await this.client.joinById<GameState>(roomId, { nickname, appearance, ...authManager.getRoomIdentity() });
+      const room = await this.client.joinById<GameState>(roomId, { nickname, appearance, ...await authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {
@@ -64,7 +64,7 @@ export class NetworkManager {
 
   async joinRoom(code: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
     try {
-      const room = await this.client.joinById<GameState>(code.toUpperCase(), { nickname, appearance, code: code.toUpperCase(), ...authManager.getRoomIdentity() });
+      const room = await this.client.joinById<GameState>(code.toUpperCase(), { nickname, appearance, code: code.toUpperCase(), ...await authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {

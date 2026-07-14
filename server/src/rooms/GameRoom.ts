@@ -34,13 +34,15 @@ import {
 } from "../../../shared/messages.js";
 import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS, type MissionDef } from "../../../shared/missions.js";
 import { decideDisconnectAction } from "./reconnectPolicy.js";
-import { getAuthConfig, verifyAppSession, type AuthUser } from "../auth/googleAuth.js";
+import { persistMatchResults, verifySupabaseAccessToken, type AuthUser, type MatchResultRecord } from "../auth/supabaseAuth.js";
+import { calculateProgressReward } from "../progression/rewards.js";
 
 const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
 // ~0.8s of sidestepping once a bot commits to a detour (see resolveBotStep) —
 // long enough to clear a typical wall corner or cubicle-divider pocket on
 // this map without wandering far off course.
 const DETOUR_BURST_TICKS = 12;
+type MatchPerformance = { hiderWins: number; seekerWins: number; escapes: number; catches: number; missionsCompleted: number };
 
 // World-space center of each of a room's doorways — same math buildRoomWalls
 // (mapLayout.ts) uses internally to place the wall gaps, just returning the
@@ -148,6 +150,10 @@ export class GameRoom extends Room<GameState> {
   private botFrozenSince = new Map<string, number>();
   private isPublicRoom = false;
   private roomTitle = "Public Office";
+  private accountUserIds = new Map<string, string>();
+  private matchPerformance = new Map<string, MatchPerformance>();
+  private currentMatchId = "";
+  private progressSavedForMatch = false;
 
   async onCreate(options: CreateRoomOptions) {
     this.setState(new GameState());
@@ -704,7 +710,7 @@ export class GameRoom extends Room<GameState> {
       throw new Error(JOIN_ERROR.ROOM_FULL);
     }
     const authToken = typeof options.authToken === "string" ? options.authToken : "";
-    const user = authToken ? verifyAppSession(authToken, getAuthConfig().authSecret) : null;
+    const user = authToken ? await verifySupabaseAccessToken(authToken) : null;
     const guestId = typeof options.guestId === "string" && /^[a-zA-Z0-9-]{16,64}$/.test(options.guestId) ? options.guestId : "";
     return { user, guestId };
   }
@@ -719,6 +725,7 @@ export class GameRoom extends Room<GameState> {
     player.nickname = (options.nickname || `Player-${client.sessionId.slice(0, 4)}`).slice(0, 12);
     player.isHost = seq === 0;
     player.isAuthenticated = Boolean(auth?.user);
+    if (auth?.user) this.accountUserIds.set(client.sessionId, auth.user.id);
     // No roles yet (lands in Phase 3) — spawn everyone at a hider edge point,
     // since the seeker room's spawn is reserved for that role specifically.
     const spawn = randomHiderSpawn();
@@ -766,6 +773,8 @@ export class GameRoom extends Room<GameState> {
     if (leavingPlayer?.isHidden) this.freeCoverPoint(leavingPlayer.coverPointId, client.sessionId);
 
     this.state.players.delete(client.sessionId);
+    this.accountUserIds.delete(client.sessionId);
+    this.matchPerformance.delete(client.sessionId);
     this.joinSeq.delete(client.sessionId);
     this.lastMoveAt.delete(client.sessionId);
     this.inspectCooldownUntil.delete(client.sessionId);
@@ -820,6 +829,12 @@ export class GameRoom extends Room<GameState> {
     this.state.roundsPerMatch = message?.roundsPerMatch === 5 ? 5 : 3;
     this.state.matchRound = 1;
     this.state.matchComplete = false;
+    this.currentMatchId = `${this.roomId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.progressSavedForMatch = false;
+    this.matchPerformance.clear();
+    this.state.players.forEach((candidate) => {
+      if (!candidate.isBot) this.matchPerformance.set(candidate.id, { hiderWins: 0, seekerWins: 0, escapes: 0, catches: 0, missionsCompleted: 0 });
+    });
     this.state.players.forEach((candidate) => (candidate.score = 0));
     this.state.round += 1;
     this.beginRound();
@@ -957,10 +972,17 @@ export class GameRoom extends Room<GameState> {
   private endRound() {
     const hiders = [...this.state.players.values()].filter((p) => p.role === "hider");
     const survivors = hiders.filter((p) => p.isEscaped);
+    const hidersWon = survivors.length > 0;
+
+    this.state.players.forEach((player) => {
+      const performance = this.matchPerformance.get(player.id);
+      if (!performance) return;
+      if (player.role === "hider" && hidersWon) performance.hiderWins += 1;
+      if (player.role === "seeker" && !hidersWon) performance.seekerWins += 1;
+    });
 
     for (const survivor of survivors) survivor.score += GAME_CONFIG.SCORE.SURVIVE;
     if (survivors.length === 1) survivors[0].score += GAME_CONFIG.SCORE.LAST_SURVIVOR_BONUS;
-
     this.state.relocateActive = false;
     this.state.corporateEvent = "";
     this.state.corporateEventTime = 0;
@@ -968,6 +990,10 @@ export class GameRoom extends Room<GameState> {
     this.state.darkRooms.clear();
     this.state.phase = "result";
     this.state.timeRemaining = GAME_CONFIG.RESULT_SEC;
+    if (this.state.matchRound >= this.state.roundsPerMatch && !this.progressSavedForMatch) {
+      this.progressSavedForMatch = true;
+      this.clock.setTimeout(() => void this.saveMatchProgress(), 250);
+    }
   }
 
   private beginLobby() {
@@ -977,6 +1003,23 @@ export class GameRoom extends Room<GameState> {
     this.state.players.forEach((player) => (player.isReady = player.isBot));
     this.unlock();
     this.updateListing();
+  }
+
+  private async saveMatchProgress() {
+    const records: MatchResultRecord[] = [];
+    this.state.players.forEach((player) => {
+      const userId = this.accountUserIds.get(player.id);
+      const performance = this.matchPerformance.get(player.id);
+      if (!userId || !performance || player.isBot) return;
+      const { xpEarned, coinsEarned } = calculateProgressReward(player.score);
+      records.push({ matchId: this.currentMatchId, userId, score: player.score, xpEarned, coinsEarned, ...performance });
+    });
+    const savedUserIds = await persistMatchResults(records);
+    records.forEach((record) => {
+      if (!savedUserIds.has(record.userId)) return;
+      const sessionId = [...this.accountUserIds.entries()].find(([, userId]) => userId === record.userId)?.[0];
+      if (sessionId) this.clients.find((candidate) => candidate.sessionId === sessionId)?.send("progressEarned", record);
+    });
   }
 
   private handleMove(client: Client, message: MoveMessage) {
@@ -1170,6 +1213,8 @@ export class GameRoom extends Room<GameState> {
     this.state.missions.delete(mission.id);
     this.state.missionsCompleted += 1;
     player.score += MISSION_SCORE;
+    const missionPerformance = this.matchPerformance.get(player.id);
+    if (missionPerformance) missionPerformance.missionsCompleted += 1;
     this.broadcast("missionComplete", { missionId: mission.id, title: mission.title, nickname: player.nickname, points: MISSION_SCORE });
 
     this.activateNextMissions();
@@ -1312,6 +1357,8 @@ export class GameRoom extends Room<GameState> {
 
     const points = GAME_CONFIG.SCORE.CATCH + (this.firstCatchAwarded ? 0 : GAME_CONFIG.SCORE.FIRST_CATCH_BONUS);
     seeker.score += points;
+    const catchPerformance = this.matchPerformance.get(seeker.id);
+    if (catchPerformance && hider) catchPerformance.catches += 1;
     this.firstCatchAwarded = true;
     seekerClient?.send("catchSuccess", { targetNickname: hider?.nickname ?? "", points });
 
@@ -1432,6 +1479,8 @@ export class GameRoom extends Room<GameState> {
     player.isEscaped = true;
     player.isCaught = true; // escaped players become safe spectators
     player.score += GAME_CONFIG.EXIT_SCORE;
+    const escapePerformance = this.matchPerformance.get(player.id);
+    if (escapePerformance) escapePerformance.escapes += 1;
     client.send("escaped", { points: GAME_CONFIG.EXIT_SCORE });
     this.broadcast("playerEscaped", { nickname: player.nickname });
 

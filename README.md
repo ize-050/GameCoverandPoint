@@ -23,26 +23,29 @@ cd client && npm install && npm run dev
 Client dev server prints a local URL (default http://localhost:5173).
 It connects to the Colyseus server at `ws://localhost:2567`.
 
-## Optional Google Login
+## Supabase Google Login and progression
 
-Guest play remains the default and receives a stable device-local Guest ID. To
-enable Google Login, create a **Google OAuth 2.0 Web application** and add these
-Authorized JavaScript origins:
+Guest play remains the default with a stable device-local Guest ID. Accounts,
+profiles, XP/Level, coins, stats and match history use Supabase:
 
-- `http://localhost:5173`
-- `https://game-coverand-point.vercel.app`
-- your custom production domain, when connected
+1. Create a Supabase project and run `supabase/migrations/202607150001_progression.sql`.
+2. In Google Auth Platform, create a Web OAuth client. Add localhost, the Vercel
+   URL and the custom domain as Authorized JavaScript origins. Add the callback
+   URL shown on Supabase's Google provider page as an Authorized redirect URI.
+3. Enable Google in Supabase Authentication → Providers and configure Site URL
+   plus Redirect URLs for production and localhost.
+4. Copy `client/.env.example` and `server/.env.example` for local development.
 
-Copy `client/.env.example` and `server/.env.example`, then use the same Google
-Web Client ID on both sides. Production variables:
+Production variables:
 
-- Vercel: `VITE_GOOGLE_CLIENT_ID`, `VITE_API_URL=https://gamecoverandpoint.onrender.com`
-- Render: `GOOGLE_CLIENT_ID`, `AUTH_SECRET` (generate a long random value)
+- Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
+- Render: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
 
-The browser sends the Google credential to `POST /auth/google`. The game server
-verifies its signature and audience with Google before issuing a signed 7-day
-game session. Room joins only display the verified-account badge when that
-server session is valid; client-supplied profile claims are never trusted.
+The publishable key is intentionally safe for the browser. The secret key must
+exist only on Render. Colyseus verifies the Supabase access token before showing
+the account badge, calculates rewards server-side, and calls the protected
+`record_match_result` database function after a complete 3/5-round match. RLS
+allows clients to read only their own profile, stats, history and inventory.
 
 ## Progress (per spec section 7)
 

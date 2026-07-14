@@ -13,11 +13,11 @@
     "@colyseus/core": "^0.15.57",
     "@colyseus/schema": "^2.0.35",
     "@colyseus/ws-transport": "^0.15.3",
+    "@supabase/supabase-js": "^2.110.5",
     "colyseus": "^0.15.57",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
-    "express": "^4.19.2",
-    "google-auth-library": "^10.9.0"
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
