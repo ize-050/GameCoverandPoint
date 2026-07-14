@@ -34,6 +34,7 @@ import {
 } from "../../../shared/messages.js";
 import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS, type MissionDef } from "../../../shared/missions.js";
 import { decideDisconnectAction } from "./reconnectPolicy.js";
+import { getAuthConfig, verifyAppSession, type AuthUser } from "../auth/googleAuth.js";
 
 const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
 // ~0.8s of sidestepping once a bot commits to a detour (see resolveBotStep) —
@@ -702,10 +703,13 @@ export class GameRoom extends Room<GameState> {
     if (this.state.players.size >= GAME_CONFIG.MAX_PLAYERS) {
       throw new Error(JOIN_ERROR.ROOM_FULL);
     }
-    return options;
+    const authToken = typeof options.authToken === "string" ? options.authToken : "";
+    const user = authToken ? verifyAppSession(authToken, getAuthConfig().authSecret) : null;
+    const guestId = typeof options.guestId === "string" && /^[a-zA-Z0-9-]{16,64}$/.test(options.guestId) ? options.guestId : "";
+    return { user, guestId };
   }
 
-  onJoin(client: Client, options: CreateRoomOptions) {
+  onJoin(client: Client, options: CreateRoomOptions, auth?: { user: AuthUser | null; guestId: string }) {
     const seq = this.nextJoinSeq++;
     this.joinSeq.set(client.sessionId, seq);
     this.lastMoveAt.set(client.sessionId, Date.now());
@@ -714,6 +718,7 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.nickname = (options.nickname || `Player-${client.sessionId.slice(0, 4)}`).slice(0, 12);
     player.isHost = seq === 0;
+    player.isAuthenticated = Boolean(auth?.user);
     // No roles yet (lands in Phase 3) — spawn everyone at a hider edge point,
     // since the seeker room's spawn is reserved for that role specifically.
     const spawn = randomHiderSpawn();

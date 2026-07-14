@@ -15,7 +15,9 @@
     "@colyseus/ws-transport": "^0.15.3",
     "colyseus": "^0.15.57",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "google-auth-library": "^10.9.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

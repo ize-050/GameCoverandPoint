@@ -34,6 +34,7 @@ export class Player extends Schema {
   @type("boolean") isHost: boolean = false;
   @type("boolean") isReady: boolean = false;
   @type("boolean") isBot: boolean = false;
+  @type("boolean") isAuthenticated: boolean = false;
   // Seeker's total inspect budget for the round (spec: no more infinite
   // sweep-every-cover-point). Unused/0 for hiders. Not filtered — safe to
   // reveal like score/isCaught, no anti-cheat concern.

@@ -2,6 +2,7 @@ import { Client, Room } from "colyseus.js";
 import { GameState } from "../schema/GameState";
 import { JOIN_ERROR, type CharacterAppearance, type PublicRoomInfo } from "../../../shared/messages";
 import { saveReconnectToken } from "./reconnect";
+import { authManager } from "../auth/AuthManager";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
 
@@ -25,7 +26,7 @@ export class NetworkManager {
 
   async createRoom(nickname: string, appearance: CharacterAppearance, visibility: "public" | "private" = "private", botCount = 0): Promise<Room<GameState>> {
     try {
-      const room = await this.client.create<GameState>("game", { nickname, appearance, visibility, botCount });
+      const room = await this.client.create<GameState>("game", { nickname, appearance, visibility, botCount, ...authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {
@@ -47,7 +48,7 @@ export class NetworkManager {
 
   async joinPublicRoom(roomId: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
     try {
-      const room = await this.client.joinById<GameState>(roomId, { nickname, appearance });
+      const room = await this.client.joinById<GameState>(roomId, { nickname, appearance, ...authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {
@@ -63,7 +64,7 @@ export class NetworkManager {
 
   async joinRoom(code: string, nickname: string, appearance: CharacterAppearance): Promise<Room<GameState>> {
     try {
-      const room = await this.client.joinById<GameState>(code.toUpperCase(), { nickname, appearance, code: code.toUpperCase() });
+      const room = await this.client.joinById<GameState>(code.toUpperCase(), { nickname, appearance, code: code.toUpperCase(), ...authManager.getRoomIdentity() });
       saveReconnectToken(room.reconnectionToken);
       return room;
     } catch (err) {

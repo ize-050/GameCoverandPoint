@@ -8,6 +8,7 @@ import { DEFAULT_APPEARANCE, CHARACTER_VARIANTS, type CharacterAppearance } from
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
 import { playUiClickSfx } from "../audio/sfx";
 import { getLang } from "../i18n/lang";
+import { authManager, type AuthUser } from "../auth/AuthManager";
 
 const NICKNAME_KEY = "hns_nickname";
 const APPEARANCE_KEY = "hns_appearance";
@@ -133,6 +134,12 @@ export class MenuScreen implements Screen {
         <section id="play" class="landing-section play-section">
           <div class="play-copy"><div class="section-kicker">${tr("พร้อมกลับบ้านหรือยัง?", "READY TO CLOCK OUT?")}</div><h2>${tr("เริ่มแผน", "START YOUR")}<br/>${tr("หลบหนี", "ESCAPE PLAN.")}</h2><p>${tr("เข้า Quick Play เลือกห้องสาธารณะ ชวนเพื่อนด้วยรหัสส่วนตัว หรือฝึกกับ Office Bots", "Quick Play, browse public rooms, invite friends with a private code, or practise with Office Bots.")}</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
           <div class="hns-panel play-panel">
+            <div id="accountPanel" style="padding:12px;border:1px solid #ffffff1f;border-radius:14px;background:#080d18aa;display:flex;flex-direction:column;align-items:center;gap:9px;">
+              <div id="accountIdentity" style="width:100%;display:flex;align-items:center;gap:10px;"></div>
+              <div id="googleSignIn"></div>
+              <button id="signOutBtn" class="hns-btn hns-btn-ghost" style="display:none;width:100%;">${tr("ออกจากบัญชี", "SIGN OUT")}</button>
+              <div id="authHint" style="font-size:11px;color:#94a3b8;text-align:center;"></div>
+            </div>
             <div class="hns-label">${tr("ชื่อเล่น", "YOUR NICKNAME")}</div><input id="nickname" class="hns-input" maxlength="12" placeholder="${tr("ชื่อเล่น (ไม่เกิน 12 ตัวอักษร)", "Nickname (max 12 characters)")}" value="${escapeHtml(savedNickname)}" />
             <div class="hns-label">${tr("เลือกพนักงานของคุณ", "CHOOSE YOUR EMPLOYEE")}</div><div class="variant-row"><button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button><span id="variantLabel">${tr("พนักงาน", "Employee")} 1</span><button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button></div>
             <button id="quickBtn" class="hns-btn hns-btn-primary">⚡ ${tr("เล่นด่วน", "QUICK PLAY")}</button>
@@ -192,6 +199,58 @@ export class MenuScreen implements Screen {
     const variantLabelEl = root.querySelector("#variantLabel") as HTMLSpanElement;
     const variantPrevBtn = root.querySelector("#variantPrev") as HTMLButtonElement;
     const variantNextBtn = root.querySelector("#variantNext") as HTMLButtonElement;
+    const accountIdentityEl = root.querySelector("#accountIdentity") as HTMLDivElement;
+    const googleSignInEl = root.querySelector("#googleSignIn") as HTMLDivElement;
+    const signOutBtn = root.querySelector("#signOutBtn") as HTMLButtonElement;
+    const authHintEl = root.querySelector("#authHint") as HTMLDivElement;
+
+    const renderAccount = (user: AuthUser | null = authManager.user) => {
+      accountIdentityEl.innerHTML = "";
+      const avatar = document.createElement("div");
+      avatar.style.cssText = "width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#172033;color:#fbbf24;font-weight:950;overflow:hidden;flex:0 0 auto;";
+      if (user?.picture.startsWith("https://")) {
+        const image = document.createElement("img");
+        image.src = user.picture;
+        image.alt = "";
+        image.referrerPolicy = "no-referrer";
+        image.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        avatar.appendChild(image);
+      } else avatar.textContent = user ? user.displayName.slice(0, 1).toUpperCase() : "G";
+      const copy = document.createElement("div");
+      copy.style.cssText = "min-width:0;flex:1;text-align:left;";
+      const title = document.createElement("div");
+      title.style.cssText = "font-size:13px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      title.textContent = user?.displayName ?? tr("เล่นแบบ Guest", "PLAYING AS GUEST");
+      const subtitle = document.createElement("div");
+      subtitle.style.cssText = "font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      subtitle.textContent = user?.email ?? tr("เข้าเล่นได้ทันที · ความคืบหน้าเก็บในเครื่อง", "Jump in instantly · progress stays on this device");
+      copy.append(title, subtitle);
+      accountIdentityEl.append(avatar, copy);
+      googleSignInEl.style.display = user ? "none" : "block";
+      signOutBtn.style.display = user ? "block" : "none";
+      authHintEl.textContent = user
+        ? tr("✓ ยืนยันบัญชี Google แล้ว", "✓ GOOGLE ACCOUNT VERIFIED")
+        : authManager.isGoogleConfigured
+          ? tr("Login เป็นทางเลือก — Guest ยังเล่นได้ตามปกติ", "Login is optional — Guest play remains available")
+          : tr("Google Login กำลังเปิดใช้งาน · ตอนนี้เล่นแบบ Guest ได้เลย", "Google Login is being activated · Guest play is ready now");
+      authHintEl.style.color = user ? "#86efac" : "#94a3b8";
+    };
+
+    const mountGoogleButton = () => {
+      if (!authManager.isGoogleConfigured || authManager.user) return;
+      void authManager.renderGoogleButton(googleSignInEl, (user) => {
+        if (!nicknameInput.value.trim()) nicknameInput.value = user.displayName.slice(0, 12);
+        renderAccount(user);
+      }, () => {
+        authHintEl.textContent = tr("Google Login ไม่สำเร็จ กรุณาลองใหม่", "Google sign-in failed. Please try again.");
+        authHintEl.style.color = "#fca5a5";
+      });
+    };
+
+    renderAccount();
+    mountGoogleButton();
+    void authManager.restore().then((user) => { if (this.overlay === root) { renderAccount(user); mountGoogleButton(); } });
+    signOutBtn.addEventListener("click", () => { authManager.signOut(); renderAccount(null); mountGoogleButton(); });
 
     const persistAppearance = () => localStorage.setItem(APPEARANCE_KEY, JSON.stringify(this.appearance));
 

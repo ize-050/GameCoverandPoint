@@ -436,3 +436,14 @@ git status
 - เพิ่ม Mission flavour ใหม่ 7 แบบ รวมเป็น 14 แบบ โดยสุ่มหนึ่งภารกิจต่อ terminal เพื่อไม่ให้สองชื่อภารกิจทับจุดเดียวกันในรอบเดียว
 - ตรวจ local browser จริง: สลับภาษาใน Landing แล้วค่าฟอร์มอยู่ครบ, สลับใน Lobby แล้วยังอยู่ room code เดิม 4/10 คน, สลับกลาง Match ไม่หลุด และปิด/เปิด client ฝั่ง Seeker แล้ว reconnect กลับเข้ารอบเดิมสำเร็จ
 - `npm test` ผ่าน 6/6, client production build และ server TypeScript build ผ่าน
+
+## Google Login MVP
+
+- เพิ่ม Guest ID แบบถาวรใน `localStorage` เพื่อเตรียมเชื่อม progress/stats โดย Guest ยังสร้างห้อง, Quick Play และเล่นกับ Bot ได้เหมือนเดิม
+- เพิ่ม Google Login แบบ optional บนหน้า Play พร้อมรูปโปรไฟล์, ชื่อ, email, verified status และ Sign Out
+- ใช้ Google Identity Services button มาตรฐานและโหลด SDK เฉพาะเมื่อกำหนด `VITE_GOOGLE_CLIENT_ID`
+- เพิ่ม `POST /auth/google`: Render ตรวจ ID token, audience และ `email_verified` กับ Google ก่อนเชื่อถือบัญชี
+- หลังยืนยันสำเร็จ server ออก HMAC-signed game session อายุ 7 วัน; เพิ่ม `GET /auth/me` สำหรับตรวจ/กู้ session เมื่อเปิดเกมใหม่
+- Room join ส่ง Guest ID/session ไป server และ Lobby แสดง verified badge เฉพาะบัญชีที่ server ตรวจสำเร็จ ไม่เชื่อสถานะ Login ที่ client ส่งมาเอง
+- เพิ่ม environment templates และขั้นตอนตั้ง Google OAuth สำหรับ localhost, Vercel และ custom domain ใน README
+- เพิ่ม automated auth tests สำหรับ valid session, token tampering, wrong secret และ expiry; test suite รวมผ่าน 9/9

@@ -32,6 +32,8 @@ export const DEFAULT_APPEARANCE: CharacterAppearance = {
 export interface CreateRoomOptions {
   nickname: string;
   appearance: CharacterAppearance;
+  guestId?: string;
+  authToken?: string;
   visibility?: "public" | "private";
   roomTitle?: string;
   botCount?: number;
@@ -41,6 +43,8 @@ export interface JoinRoomOptions {
   nickname: string;
   code: string;
   appearance: CharacterAppearance;
+  guestId?: string;
+  authToken?: string;
 }
 
 export interface PublicRoomInfo {

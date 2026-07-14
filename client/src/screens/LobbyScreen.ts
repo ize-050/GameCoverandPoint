@@ -133,7 +133,7 @@ export class LobbyScreen implements Screen {
     const summary = this.room.state.matchComplete ? `<div style="color:#facc15;font-weight:900;margin-bottom:10px;">${t("lobby.matchComplete")}</div>` : "";
     this.listEl.innerHTML = summary + `${t("lobby.joined", { count: players.length, max: GAME_CONFIG.MAX_PLAYERS })}<br/><br/>` + players.map((p) =>
       `<div style="display:flex;align-items:center;gap:7px;margin:5px 0;">
-        <span style="flex:1;">${p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : p.isBot ? "🤖" : "•"} ${escapeHtml(p.nickname)}</span>
+        <span style="flex:1;">${p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : p.isBot ? "🤖" : "•"} ${escapeHtml(p.nickname)}${p.isAuthenticated ? ` ${icon("check", { size: 12, color: "#60a5fa" })}` : ""}</span>
         <b style="font-size:11px;color:${p.isReady ? "#4ade80" : "#94a3b8"};">${this.room!.state.matchComplete ? t("lobby.pts", { score: p.score }) : p.isBot ? t("lobby.bot") : p.isHost ? t("lobby.host") : p.isReady ? t("lobby.readyTag") : t("lobby.waitingTag")}</b>
         ${isHost && !p.isHost ? `<button data-kick="${p.id}" class="hns-btn hns-btn-ghost" style="padding:3px 7px;font-size:10px;">${t("lobby.kick")}</button>` : ""}
       </div>`).join("");

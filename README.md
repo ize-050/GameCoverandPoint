@@ -23,6 +23,27 @@ cd client && npm install && npm run dev
 Client dev server prints a local URL (default http://localhost:5173).
 It connects to the Colyseus server at `ws://localhost:2567`.
 
+## Optional Google Login
+
+Guest play remains the default and receives a stable device-local Guest ID. To
+enable Google Login, create a **Google OAuth 2.0 Web application** and add these
+Authorized JavaScript origins:
+
+- `http://localhost:5173`
+- `https://game-coverand-point.vercel.app`
+- your custom production domain, when connected
+
+Copy `client/.env.example` and `server/.env.example`, then use the same Google
+Web Client ID on both sides. Production variables:
+
+- Vercel: `VITE_GOOGLE_CLIENT_ID`, `VITE_API_URL=https://gamecoverandpoint.onrender.com`
+- Render: `GOOGLE_CLIENT_ID`, `AUTH_SECRET` (generate a long random value)
+
+The browser sends the Google credential to `POST /auth/google`. The game server
+verifies its signature and audience with Google before issuing a signed 7-day
+game session. Room joins only display the verified-account badge when that
+server session is valid; client-supplied profile claims are never trusted.
+
 ## Progress (per spec section 7)
 
 - [x] Phase 1 — skeleton: monorepo, Colyseus room with 4-char room codes (create/join,
