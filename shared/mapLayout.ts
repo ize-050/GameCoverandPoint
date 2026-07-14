@@ -538,10 +538,29 @@ const COVER_POINTS_RAW: CoverPointDef[] = [
 
 export const COVER_POINTS: CoverPointDef[] = COVER_POINTS_RAW.map((cp) => shrinkPoint({ ...cp, x: scale(cp.x), y: scale(cp.y) }));
 
+// Hand-authored spawn coordinates are only validated against the map layout
+// current at the time they were written — a later change elsewhere (the
+// PART 1 gap-compression pass shifting corridor space, say) can silently
+// leave one overlapping a wall it never used to be near. A player who
+// spawns embedded in a wall can find themselves able to move in only one
+// or two of the four directions, which reads as "stuck at the edge,
+// can't move." Nudge outward in a small spiral until clear instead of
+// trusting the literal coordinate forever.
+function ensureClearOfWalls(p: { x: number; y: number }): { x: number; y: number } {
+  if (!collidesWithAnyWall(p.x, p.y, PLAYER_RADIUS)) return p;
+  for (let radius = 8; radius <= 80; radius += 8) {
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+      const candidate = { x: p.x + Math.cos(angle) * radius, y: p.y + Math.sin(angle) * radius };
+      if (!collidesWithAnyWall(candidate.x, candidate.y, PLAYER_RADIUS)) return candidate;
+    }
+  }
+  return p; // every nearby ring is blocked too — leave as-is rather than teleporting far away
+}
+
 // Center of the reception room — the hub, and the seeker's holding spot
 // before "hide" phase ends (movement is already blocked for seekers during
 // hide phase, so no sealed room is needed here, just a room they spawn in).
-export const SEEKER_SPAWN = shrinkPoint(scaleXY({ x: 3150, y: 3900 }));
+export const SEEKER_SPAWN = ensureClearOfWalls(shrinkPoint(scaleXY({ x: 3150, y: 3900 })));
 
 // Points spread around the map so hiders spawn well clear of each other,
 // even with up to 9 concurrent hiders.
@@ -568,7 +587,7 @@ const HIDER_SPAWNS_RAW: { x: number; y: number }[] = [
   { x: 1300, y: 2400 },
 ];
 
-export const HIDER_SPAWNS: { x: number; y: number }[] = HIDER_SPAWNS_RAW.map((p) => shrinkPoint(scaleXY(p)));
+export const HIDER_SPAWNS: { x: number; y: number }[] = HIDER_SPAWNS_RAW.map((p) => ensureClearOfWalls(shrinkPoint(scaleXY(p))));
 
 export function randomHiderSpawn(): { x: number; y: number } {
   return HIDER_SPAWNS[Math.floor(Math.random() * HIDER_SPAWNS.length)];

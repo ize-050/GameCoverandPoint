@@ -18,6 +18,8 @@ import {
   type RoomPropDef,
 } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
+import { NetworkManager } from "../network/NetworkManager";
+import { loadReconnectToken, clearReconnectToken } from "../network/reconnect";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import type {
   CharacterAppearance,
@@ -100,6 +102,16 @@ function appearanceOf(player: { characterVariant: string }): CharacterAppearance
 // seeker gets an unmistakable "that's the threat" cue.
 function nameColorFor(player: { role: string }): string {
   return player.role === "seeker" ? "#ef4444" : "#ffffff";
+}
+
+// Mirrors main.ts's screenForPhase (not exported from there — it's the
+// boot-time entry point, not a shared module) so a post-disconnect
+// reconnect lands on whichever screen the match has actually moved to by
+// the time it resumes, not blindly back on "Game".
+function screenForPhase(phase: string): string {
+  if (phase === "lobby") return "Lobby";
+  if (phase === "result") return "Result";
+  return "Game"; // role_reveal | hide | seek
 }
 
 function propHintText(kind: RoomPropDef["kind"]): string {
@@ -821,7 +833,31 @@ export class GameScreen implements Screen {
 
     room.onStateChange(this.stateChangeHandler);
     this.unsubs.push(() => room.onStateChange.remove(this.stateChangeHandler));
-    const roomLeaveHandler = () => this.navigate("Menu");
+    // Colyseus fires onLeave for EVERY disconnect, not just an explicit
+    // "leave" — a wifi blip or a backgrounded mobile tab looks identical to
+    // quitting unless we check the close code. The server already holds
+    // this seat open for 30s (allowReconnection in GameRoom.onLeave), so an
+    // unexpected drop (code !== 1000) gets one silent reconnect attempt
+    // instead of dumping the player at the Menu, where a fresh join would
+    // just get rejected anyway once the match isn't in "lobby" phase anymore.
+    const roomLeaveHandler = (code: number) => {
+      if (code === 1000) {
+        this.navigate("Menu");
+        return;
+      }
+      const token = loadReconnectToken();
+      if (!token) {
+        this.navigate("Menu");
+        return;
+      }
+      new NetworkManager()
+        .reconnect(token)
+        .then((resumedRoom) => this.navigate(screenForPhase(resumedRoom.state.phase), { room: resumedRoom }))
+        .catch(() => {
+          clearReconnectToken();
+          this.navigate("Menu");
+        });
+    };
     room.onLeave(roomLeaveHandler);
     this.unsubs.push(() => room.onLeave.remove(roomLeaveHandler));
 
