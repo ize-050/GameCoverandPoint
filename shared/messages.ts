@@ -165,7 +165,7 @@ export interface RevealPingMessage {
   durationMs: number;
 }
 
-export type CorporateEventKind = "mandatory_meeting" | "freeze_review" | "printer_meltdown";
+export type CorporateEventKind = "mandatory_meeting" | "freeze_review" | "printer_meltdown" | "fire_drill" | "lights_out";
 export interface CorporateEventMessage {
   kind: CorporateEventKind;
   title: string;

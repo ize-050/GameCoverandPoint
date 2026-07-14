@@ -54,6 +54,10 @@ const STRINGS = {
     "event.freezeBody": "หยุดนิ่ง — ขยับจะถูกเปิดตำแหน่งให้คนหาเห็น",
     "event.printerTitle": "🖨️ เครื่องพิมพ์ระเบิด",
     "event.printerBody": "อยู่ให้ห่างจากเครื่อง Report Terminal ใน Work Zone A",
+    "event.fireTitle": "🔥 ซ้อมหนีไฟกะทันหัน",
+    "event.fireBody": "ไปจุดรวมพลที่ Reception ให้ทันเวลา",
+    "event.lightsTitle": "💡 โหมดประหยัดไฟ",
+    "event.lightsBody": "ไฟดับสองโซน — ทำงานต่อและเดินให้ระวัง",
     "event.fallback": "ปฏิบัติตามนโยบายบริษัท",
     "hud.skillCheck": "ทดสอบทักษะออฟฟิศ · {sec}s",
     "hud.skillCheckWrong": "กดผิดจะมีเสียงดังและเปิดตำแหน่งของคุณ",
@@ -67,6 +71,7 @@ const STRINGS = {
     "hud.blackoutRemaining": "อีก {sec} วิ",
     "hud.roleSeeker": "คุณคือคนหา!",
     "hud.roleHider": "คุณคือคนซ่อน!",
+    "hud.reconnectPause": "กำลังรอคนหากลับเข้าเกม…<br/><small>รอบถูกหยุดไว้ชั่วคราว สูงสุด 30 วินาที</small>",
 
     // --- GameScreen: info bar, prop hints, feedback banners ---
     "game.infoBar": "ห้อง: {code}  |  รอบ {round}  |  เฟส: {phase} ({sec} วิ)",
@@ -156,6 +161,8 @@ const STRINGS = {
 
     // --- Language toggle ---
     "lang.toggle": "EN",
+    "audio.on": "เปิดเสียง",
+    "audio.off": "ปิดเสียง",
   },
   en: {
     "help.title": "How to Play",
@@ -202,6 +209,10 @@ const STRINGS = {
     "event.freezeBody": "FREEZE — moving reveals you to Office Patrol",
     "event.printerTitle": "🖨️ PRINTER MELTDOWN",
     "event.printerBody": "Stay clear of the Report Terminal in Work Zone A",
+    "event.fireTitle": "🔥 SURPRISE FIRE DRILL",
+    "event.fireBody": "Reach the Reception assembly point before time runs out",
+    "event.lightsTitle": "💡 POWER SAVING MODE",
+    "event.lightsBody": "Two zones are dark — keep working and watch your step",
     "event.fallback": "Follow company policy",
     "hud.skillCheck": "OFFICE SKILL CHECK · {sec}s",
     "hud.skillCheckWrong": "Wrong key makes noise and reveals your position",
@@ -215,6 +226,7 @@ const STRINGS = {
     "hud.blackoutRemaining": "{sec}s remaining",
     "hud.roleSeeker": "You are the Seeker!",
     "hud.roleHider": "You are the Hider!",
+    "hud.reconnectPause": "Waiting for the Seeker to reconnect…<br/><small>Round paused for up to 30 seconds</small>",
 
     "game.infoBar": "Room: {code}  |  Round {round}  |  Phase: {phase} ({sec}s)",
     "prop.whiteboard": "[SPACE] Write on whiteboard to decoy the Seeker",
@@ -300,6 +312,8 @@ const STRINGS = {
     "result.roundRest": "ROUND {round}/{total} · resting {sec}s",
 
     "lang.toggle": "ไทย",
+    "audio.on": "Sound on",
+    "audio.off": "Mute sound",
   },
 } satisfies Record<"th" | "en", Record<string, string>>;
 

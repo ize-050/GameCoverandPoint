@@ -7,10 +7,14 @@ import { Character3D } from "../entities3d/Character3D";
 import { DEFAULT_APPEARANCE, CHARACTER_VARIANTS, type CharacterAppearance } from "../../../shared/messages";
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
 import { playUiClickSfx } from "../audio/sfx";
+import { getLang } from "../i18n/lang";
 
 const NICKNAME_KEY = "hns_nickname";
 const APPEARANCE_KEY = "hns_appearance";
 const PREVIEW_SIZE = 200;
+type MenuRefreshData = { nickname: string; code: string; visibility: string; scrollTop: number };
+
+const tr = (th: string, en: string) => getLang() === "th" ? th : en;
 
 function loadAppearance(): CharacterAppearance {
   try {
@@ -41,16 +45,26 @@ export class MenuScreen implements Screen {
     this.navigate = navigate;
   }
 
-  mount() {
+  mount(data?: Partial<MenuRefreshData>) {
     this.overlay = createOverlay();
     this.overlay.className = "hns-landing";
     this.overlay.style.display = "block";
     this.overlay.style.overflowY = "auto";
     this.overlay.style.overflowX = "hidden";
     this.overlay.style.background = "#070b14";
-    this.overlay.innerHTML = this.template();
+    this.overlay.innerHTML = this.template(data);
     this.wire();
     this.buildPreview();
+    if (data?.scrollTop) requestAnimationFrame(() => { if (this.overlay) this.overlay.scrollTop = data.scrollTop!; });
+  }
+
+  getRefreshData(): MenuRefreshData {
+    return {
+      nickname: (this.overlay?.querySelector("#nickname") as HTMLInputElement | null)?.value ?? "",
+      code: (this.overlay?.querySelector("#code") as HTMLInputElement | null)?.value ?? "",
+      visibility: (this.overlay?.querySelector("#visibility") as HTMLSelectElement | null)?.value ?? "private",
+      scrollTop: this.overlay?.scrollTop ?? 0,
+    };
   }
 
   unmount() {
@@ -67,69 +81,71 @@ export class MenuScreen implements Screen {
     }
   }
 
-  private template(): string {
-    const savedNickname = localStorage.getItem(NICKNAME_KEY) ?? "";
+  private template(data?: Partial<MenuRefreshData>): string {
+    const savedNickname = data?.nickname ?? localStorage.getItem(NICKNAME_KEY) ?? "";
+    const savedCode = data?.code ?? "";
+    const visibility = data?.visibility ?? "private";
     return `
       <nav class="landing-nav">
         <a href="#top" class="landing-brand">${icon("hider", { size: 25, color: "#fbbf24" })}<span>CLOCK OUT<br/><small>PROTOCOL</small></span></a>
-        <div class="landing-links"><a href="#story">Story</a><a href="#how">How to Play</a><a href="#roles">Roles</a><a href="#play" class="nav-cta">Play Now</a></div>
+        <div class="landing-links"><a href="#story">${tr("เนื้อเรื่อง", "Story")}</a><a href="#how">${tr("วิธีเล่น", "How to Play")}</a><a href="#roles">${tr("บทบาท", "Roles")}</a><a href="#play" class="nav-cta">${tr("เล่นเลย", "Play Now")}</a></div>
       </nav>
 
       <main id="top">
         <section class="landing-hero">
           <div class="hero-art" aria-hidden="true"></div>
           <div class="hero-content">
-            <div class="eyebrow">ONLINE OFFICE PARTY GAME · 1–10 PLAYERS</div>
-            <h1>ESCAPE THE<br/><span>OVERTIME.</span></h1>
-            <p>The office AI has locked the doors. Complete secret missions, deploy ridiculous gadgets, hide from Office Patrol—and clock out before time runs out.</p>
-            <div class="hero-actions"><a href="#play" class="hero-primary">PLAY IN BROWSER</a><a href="#story" class="hero-secondary">DISCOVER THE STORY ↓</a></div>
-            <div class="hero-chips"><span>⚡ No install</span><span>👥 Team building</span><span>🎁 Random gadgets</span></div>
+            <div class="eyebrow">${tr("เกมปาร์ตี้ออฟฟิศออนไลน์ · 1–10 คน", "ONLINE OFFICE PARTY GAME · 1–10 PLAYERS")}</div>
+            <h1>${tr("หนีออกจาก", "ESCAPE THE")}<br/><span>${tr("โอที", "OVERTIME.")}</span></h1>
+            <p>${tr("AI ประจำออฟฟิศล็อกประตูทุกบาน ทำภารกิจลับ ใช้อุปกรณ์สุดป่วน ซ่อนตัวจากสายตรวจ และตอกบัตรออกก่อนเวลาหมด", "The office AI has locked the doors. Complete secret missions, deploy ridiculous gadgets, hide from Office Patrol—and clock out before time runs out.")}</p>
+            <div class="hero-actions"><a href="#play" class="hero-primary">${tr("เล่นบนเบราว์เซอร์", "PLAY IN BROWSER")}</a><a href="#story" class="hero-secondary">${tr("อ่านเนื้อเรื่อง ↓", "DISCOVER THE STORY ↓")}</a></div>
+            <div class="hero-chips"><span>⚡ ${tr("ไม่ต้องติดตั้ง", "No install")}</span><span>👥 ${tr("เหมาะกับทีม", "Team building")}</span><span>🎁 ${tr("อุปกรณ์สุ่ม", "Random gadgets")}</span></div>
           </div>
         </section>
 
         <section id="story" class="landing-section story-section">
-          <div class="section-kicker">THE STORY</div>
+          <div class="section-kicker">${tr("เนื้อเรื่อง", "THE STORY")}</div>
           <div class="story-grid">
-            <div><h2>THE LAST MEETING<br/>WAS A TRAP.</h2><p>It is 6:00 PM. Just as everyone prepares to leave, the building enters <b>Overtime Lockdown</b>. Doors seal. Lights fail. The office AI schedules one final meeting—with no end time.</p><p>You are part of the <b>Clock-Out Crew</b>: employees completing covert Office Missions to unlock the Reception exit and escape. But the company has activated <b>Office Patrol</b>, relentless seekers equipped with scans and trace terminals.</p></div>
-            <div class="story-card"><div class="story-time">18:00</div><div class="story-alert">⚠ OVERTIME LOCKDOWN</div><p>Four missions, revealed two at a time. One escape window. Never trust a filing cabinet.</p></div>
+            <div><h2>${tr("ประชุมครั้งสุดท้าย", "THE LAST MEETING")}<br/>${tr("คือกับดัก", "WAS A TRAP.")}</h2><p>${tr("เวลา 18:00 น. ขณะที่ทุกคนกำลังจะกลับบ้าน อาคารเข้าสู่", "It is 6:00 PM. Just as everyone prepares to leave, the building enters")} <b>${tr("โหมดล็อกดาวน์โอที", "Overtime Lockdown")}</b>${tr(" ประตูถูกล็อก ไฟเริ่มดับ และ AI นัดประชุมสุดท้ายที่ไม่มีเวลาเลิก", ". Doors seal. Lights fail. The office AI schedules one final meeting—with no end time.")}</p><p>${tr("คุณคือสมาชิก", "You are part of the")} <b>Clock-Out Crew</b>${tr(" พนักงานที่ต้องทำภารกิจลับเพื่อปลดล็อกทางออก Reception แต่บริษัทส่ง", ": employees completing covert Office Missions to unlock the Reception exit and escape. But the company has activated")} <b>Office Patrol</b>${tr(" พร้อมสแกนและเครื่องติดตามออกมาล่าทุกคน", ", relentless seekers equipped with scans and trace terminals.")}</p></div>
+            <div class="story-card"><div class="story-time">18:00</div><div class="story-alert">⚠ ${tr("ล็อกดาวน์โอที", "OVERTIME LOCKDOWN")}</div><p>${tr("สี่ภารกิจ เปิดครั้งละสอง มีโอกาสหนีเพียงครั้งเดียว และอย่าไว้ใจตู้เอกสาร", "Four missions, revealed two at a time. One escape window. Never trust a filing cabinet.")}</p></div>
           </div>
         </section>
 
         <section id="roles" class="landing-section roles-section">
-          <div class="section-kicker">CHOOSE YOUR FATE</div><h2 class="center-title">TWO ROLES. ONE VERY LONG SHIFT.</h2>
+          <div class="section-kicker">${tr("เลือกชะตาของคุณ", "CHOOSE YOUR FATE")}</div><h2 class="center-title">${tr("สองบทบาท หนึ่งกะงานที่ยาวเกินไป", "TWO ROLES. ONE VERY LONG SHIFT.")}</h2>
           <div class="role-grid">
-            <article class="role-card hider-card"><div class="role-icon">🫣</div><div class="role-label">CLOCK-OUT CREW</div><h3>HIDER</h3><p>Complete four risky missions—two active at a time—then unlock Reception's exit and clock out.</p><ul><li>◆ Mission markers & private minimap</li><li>🎁 Smoke, Decoy, Stun and Sprint</li><li>👁 Press C to check on teammates</li></ul></article>
-            <article class="role-card seeker-card"><div class="role-icon">👁️</div><div class="role-label">OFFICE PATROL</div><h3>SEEKER</h3><p>Read the room, inspect suspicious cover and use tactical scans to catch every employee before the overtime timer expires.</p><ul><li>◉ F: short-range hidden-player scan</li><li>⌁ Trace Terminal: temporary reveal</li><li>🔍 Limited inspections—choose wisely</li></ul></article>
+            <article class="role-card hider-card"><div class="role-icon">🫣</div><div class="role-label">CLOCK-OUT CREW</div><h3>${tr("คนซ่อน", "HIDER")}</h3><p>${tr("ทำสี่ภารกิจเสี่ยง ๆ ซึ่งเปิดครั้งละสอง เพื่อปลดล็อกทางออก Reception และกลับบ้าน", "Complete four risky missions—two active at a time—then unlock Reception's exit and clock out.")}</p><ul><li>◆ ${tr("จุดภารกิจและ minimap ส่วนตัว", "Mission markers & private minimap")}</li><li>🎁 ${tr("ควัน ตัวล่อ กับดัก และสปีด", "Smoke, Decoy, Stun and Sprint")}</li><li>👁 ${tr("กด C ดูเพื่อนร่วมทีม", "Press C to check on teammates")}</li></ul></article>
+            <article class="role-card seeker-card"><div class="role-icon">👁️</div><div class="role-label">OFFICE PATROL</div><h3>${tr("คนหา", "SEEKER")}</h3><p>${tr("อ่านสถานการณ์ ตรวจจุดซ่อนต้องสงสัย และใช้สแกนจับพนักงานทุกคนก่อนเวลาโอทีหมด", "Read the room, inspect suspicious cover and use tactical scans to catch every employee before the overtime timer expires.")}</p><ul><li>◉ F: ${tr("สแกนคนซ่อนระยะใกล้", "short-range hidden-player scan")}</li><li>⌁ Trace Terminal: ${tr("เปิดตำแหน่งชั่วคราว", "temporary reveal")}</li><li>🔍 ${tr("จำนวนตรวจจำกัด เลือกให้ดี", "Limited inspections—choose wisely")}</li></ul></article>
           </div>
         </section>
 
         <section id="how" class="landing-section how-section">
-          <div class="section-kicker">HOW TO PLAY</div><h2 class="center-title">YOUR FIRST SHIFT IN 4 STEPS</h2>
+          <div class="section-kicker">${tr("วิธีเล่น", "HOW TO PLAY")}</div><h2 class="center-title">${tr("กะแรกของคุณใน 4 ขั้นตอน", "YOUR FIRST SHIFT IN 4 STEPS")}</h2>
           <div class="steps-grid">
-            <article><b>01</b><span>CREATE A ROOM</span><p>Choose a character, create a room and share the four-character code.</p></article>
-            <article><b>02</b><span>REVEAL YOUR ROLE</span><p>Each round randomly assigns the Clock-Out Crew and Office Patrol.</p></article>
-            <article><b>03</b><span>WORK UNDER PRESSURE</span><p>Press E at mission markers, then match the WASD skill check. Mistakes make noise and reveal you.</p></article>
-            <article><b>04</b><span>CLOCK OUT</span><p>Finish all four missions, unlock the Reception exit and escape. Patrol wins by catching the crew first.</p></article>
+            <article><b>01</b><span>${tr("สร้างห้อง", "CREATE A ROOM")}</span><p>${tr("เลือกตัวละคร สร้างห้อง แล้วส่งรหัสสี่ตัวให้เพื่อน", "Choose a character, create a room and share the four-character code.")}</p></article>
+            <article><b>02</b><span>${tr("เปิดบทบาท", "REVEAL YOUR ROLE")}</span><p>${tr("แต่ละรอบจะสุ่มว่าใครอยู่ Clock-Out Crew และใครเป็น Office Patrol", "Each round randomly assigns the Clock-Out Crew and Office Patrol.")}</p></article>
+            <article><b>03</b><span>${tr("ทำงานใต้ความกดดัน", "WORK UNDER PRESSURE")}</span><p>${tr("กด E ที่จุดภารกิจ แล้วกด WASD ตามโจทย์ กดผิดจะส่งเสียงและเปิดตำแหน่ง", "Press E at mission markers, then match the WASD skill check. Mistakes make noise and reveal you.")}</p></article>
+            <article><b>04</b><span>${tr("ตอกบัตรออก", "CLOCK OUT")}</span><p>${tr("ทำครบสี่ภารกิจ ปลดล็อกทางออก Reception แล้วหนี ส่วน Patrol ต้องจับทุกคนให้ได้ก่อน", "Finish all four missions, unlock the Reception exit and escape. Patrol wins by catching the crew first.")}</p></article>
           </div>
-          <div class="controls-strip"><span><kbd>WASD</kbd> MOVE</span><span><kbd>SPACE</kbd> HIDE / INSPECT</span><span><kbd>E</kbd> MISSION</span><span><kbd>Q</kbd> GADGET</span><span><kbd>F</kbd> SCAN</span><span><kbd>1–4</kbd> EMOTE ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}</span></div>
+          <div class="controls-strip"><span><kbd>WASD</kbd> ${tr("เดิน", "MOVE")}</span><span><kbd>SPACE</kbd> ${tr("ซ่อน / ตรวจ", "HIDE / INSPECT")}</span><span><kbd>E</kbd> ${tr("ภารกิจ", "MISSION")}</span><span><kbd>Q</kbd> ${tr("อุปกรณ์", "GADGET")}</span><span><kbd>F</kbd> ${tr("สแกน", "SCAN")}</span><span><kbd>1–4</kbd> ${tr("อีโมจิ", "EMOTE")} ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 14 })).join("")}</span></div>
         </section>
 
         <section id="play" class="landing-section play-section">
-          <div class="play-copy"><div class="section-kicker">READY TO CLOCK OUT?</div><h2>START YOUR<br/>ESCAPE PLAN.</h2><p>Quick Play, browse public rooms, invite friends with a private code, or practise with Office Bots.</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
+          <div class="play-copy"><div class="section-kicker">${tr("พร้อมกลับบ้านหรือยัง?", "READY TO CLOCK OUT?")}</div><h2>${tr("เริ่มแผน", "START YOUR")}<br/>${tr("หลบหนี", "ESCAPE PLAN.")}</h2><p>${tr("เข้า Quick Play เลือกห้องสาธารณะ ชวนเพื่อนด้วยรหัสส่วนตัว หรือฝึกกับ Office Bots", "Quick Play, browse public rooms, invite friends with a private code, or practise with Office Bots.")}</p><div id="previewBox" style="width:${PREVIEW_SIZE}px;height:${PREVIEW_SIZE}px;border-radius:24px;overflow:hidden;background:#0c1528;border:1px solid #22d3ee66;"></div></div>
           <div class="hns-panel play-panel">
-            <div class="hns-label">YOUR NICKNAME</div><input id="nickname" class="hns-input" maxlength="12" placeholder="Nickname (max 12 characters)" value="${escapeHtml(savedNickname)}" />
-            <div class="hns-label">CHOOSE YOUR EMPLOYEE</div><div class="variant-row"><button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button><span id="variantLabel">Employee 1</span><button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button></div>
-            <button id="quickBtn" class="hns-btn hns-btn-primary">⚡ QUICK PLAY</button>
-            <button id="botPlayBtn" class="hns-btn hns-btn-secondary">🤖 PLAY WITH 3 BOTS</button>
-            <div class="hns-label">CREATE ROOM</div><select id="visibility" class="hns-input"><option value="private">PRIVATE · ROOM CODE</option><option value="public">PUBLIC · ROOM BROWSER</option></select>
-            <button id="createBtn" class="hns-btn hns-btn-primary">${icon("door", { size: 16 })} CREATE PRIVATE ROOM</button>
-            <div class="join-divider"><span>OR JOIN A TEAM</span></div><div class="join-row"><input id="code" class="hns-input" maxlength="4" placeholder="ROOM CODE" /><button id="joinBtn" class="hns-btn hns-btn-secondary">${icon("key", { size: 16 })} JOIN</button></div>
-            <div class="join-divider"><span>PUBLIC ROOMS</span></div><button id="refreshRoomsBtn" class="hns-btn hns-btn-ghost">↻ REFRESH ROOMS</button><div id="publicRooms" style="display:flex;flex-direction:column;gap:7px;max-height:180px;overflow:auto;"></div>
+            <div class="hns-label">${tr("ชื่อเล่น", "YOUR NICKNAME")}</div><input id="nickname" class="hns-input" maxlength="12" placeholder="${tr("ชื่อเล่น (ไม่เกิน 12 ตัวอักษร)", "Nickname (max 12 characters)")}" value="${escapeHtml(savedNickname)}" />
+            <div class="hns-label">${tr("เลือกพนักงานของคุณ", "CHOOSE YOUR EMPLOYEE")}</div><div class="variant-row"><button id="variantPrev" class="hns-btn hns-btn-ghost">${icon("chevron-left", { size: 14 })}</button><span id="variantLabel">${tr("พนักงาน", "Employee")} 1</span><button id="variantNext" class="hns-btn hns-btn-ghost">${icon("chevron-right", { size: 14 })}</button></div>
+            <button id="quickBtn" class="hns-btn hns-btn-primary">⚡ ${tr("เล่นด่วน", "QUICK PLAY")}</button>
+            <button id="botPlayBtn" class="hns-btn hns-btn-secondary">🤖 ${tr("เล่นกับบอท 3 ตัว", "PLAY WITH 3 BOTS")}</button>
+            <div class="hns-label">${tr("สร้างห้อง", "CREATE ROOM")}</div><select id="visibility" class="hns-input"><option value="private" ${visibility === "private" ? "selected" : ""}>${tr("ส่วนตัว · ใช้รหัสห้อง", "PRIVATE · ROOM CODE")}</option><option value="public" ${visibility === "public" ? "selected" : ""}>${tr("สาธารณะ · รายการห้อง", "PUBLIC · ROOM BROWSER")}</option></select>
+            <button id="createBtn" class="hns-btn hns-btn-primary">${icon("door", { size: 16 })} ${visibility === "public" ? tr("สร้างห้องสาธารณะ", "CREATE PUBLIC ROOM") : tr("สร้างห้องส่วนตัว", "CREATE PRIVATE ROOM")}</button>
+            <div class="join-divider"><span>${tr("หรือเข้าร่วมทีม", "OR JOIN A TEAM")}</span></div><div class="join-row"><input id="code" class="hns-input" maxlength="4" placeholder="${tr("รหัสห้อง", "ROOM CODE")}" value="${escapeHtml(savedCode)}" /><button id="joinBtn" class="hns-btn hns-btn-secondary">${icon("key", { size: 16 })} ${tr("เข้าร่วม", "JOIN")}</button></div>
+            <div class="join-divider"><span>${tr("ห้องสาธารณะ", "PUBLIC ROOMS")}</span></div><button id="refreshRoomsBtn" class="hns-btn hns-btn-ghost">↻ ${tr("รีเฟรชห้อง", "REFRESH ROOMS")}</button><div id="publicRooms" style="display:flex;flex-direction:column;gap:7px;max-height:180px;overflow:auto;"></div>
             <div id="error" class="hns-error"></div>
           </div>
         </section>
       </main>
-      <footer>Clock Out Protocol · Browser Multiplayer Prototype · Built for teams that deserve to go home.</footer>
+      <footer>${tr("Clock Out Protocol · เกมมัลติเพลเยอร์บนเบราว์เซอร์ · สร้างเพื่อทีมที่สมควรได้กลับบ้าน", "Clock Out Protocol · Browser Multiplayer Prototype · Built for teams that deserve to go home.")}</footer>
     `;
   }
 
@@ -182,7 +198,7 @@ export class MenuScreen implements Screen {
     let variantIndex = Math.max(0, CHARACTER_VARIANTS.indexOf(this.appearance.variant));
     const applyVariant = () => {
       this.appearance.variant = CHARACTER_VARIANTS[variantIndex];
-      variantLabelEl.textContent = `Employee ${variantIndex + 1}`;
+      variantLabelEl.textContent = `${tr("พนักงาน", "Employee")} ${variantIndex + 1}`;
       this.previewCharacter?.setAppearance(this.appearance);
       persistAppearance();
     };
@@ -216,14 +232,14 @@ export class MenuScreen implements Screen {
     const openRoom = (room: Awaited<ReturnType<NetworkManager["createRoom"]>>) => this.navigate("Lobby", { room });
 
     const refreshRooms = async () => {
-      publicRoomsEl.innerHTML = `<div style="color:#94a3b8;font-size:12px;">Loading public rooms...</div>`;
+      publicRoomsEl.innerHTML = `<div style="color:#94a3b8;font-size:12px;">${tr("กำลังโหลดห้องสาธารณะ...", "Loading public rooms...")}</div>`;
       try {
         const rooms = await this.network.listPublicRooms();
         publicRoomsEl.innerHTML = rooms.length ? rooms.map((room) =>
           `<button class="hns-btn hns-btn-ghost" data-public-room="${room.roomId}" style="display:flex;justify-content:space-between;gap:10px;"><span>${escapeHtml(room.title)}</span><b>${room.playerCount}/${room.maxPlayers}</b></button>`
-        ).join("") : `<div style="color:#94a3b8;font-size:12px;">No public rooms yet. Quick Play will create one.</div>`;
+        ).join("") : `<div style="color:#94a3b8;font-size:12px;">${tr("ยังไม่มีห้องสาธารณะ Quick Play จะสร้างห้องให้", "No public rooms yet. Quick Play will create one.")}</div>`;
       } catch {
-        publicRoomsEl.innerHTML = `<div style="color:#fca5a5;font-size:12px;">Could not load public rooms.</div>`;
+        publicRoomsEl.innerHTML = `<div style="color:#fca5a5;font-size:12px;">${tr("โหลดห้องสาธารณะไม่สำเร็จ", "Could not load public rooms.")}</div>`;
       }
     };
 
@@ -256,7 +272,7 @@ export class MenuScreen implements Screen {
     });
 
     visibilitySelect.addEventListener("change", () => {
-      createBtn.textContent = visibilitySelect.value === "public" ? "CREATE PUBLIC ROOM" : "CREATE PRIVATE ROOM";
+      createBtn.textContent = visibilitySelect.value === "public" ? tr("สร้างห้องสาธารณะ", "CREATE PUBLIC ROOM") : tr("สร้างห้องส่วนตัว", "CREATE PRIVATE ROOM");
     });
     refreshRoomsBtn.addEventListener("click", () => void refreshRooms());
     publicRoomsEl.addEventListener("click", async (event) => {
@@ -273,7 +289,7 @@ export class MenuScreen implements Screen {
       showError("");
       const code = codeInput.value.trim();
       if (code.length !== 4) {
-        showError("Enter a 4-character room code");
+        showError(tr("กรอกรหัสห้อง 4 ตัวอักษร", "Enter a 4-character room code"));
         return;
       }
       joinBtn.disabled = true;
@@ -289,11 +305,11 @@ export class MenuScreen implements Screen {
 
   private describeError(err: unknown): string {
     if (err instanceof JoinError) {
-      if (err.reason === "ROOM_FULL") return "This room is full (10 players)";
-      if (err.reason === "GAME_ALREADY_STARTED") return "This round has already started";
-      return "Room not found";
+      if (err.reason === "ROOM_FULL") return tr("ห้องนี้เต็มแล้ว (10 คน)", "This room is full (10 players)");
+      if (err.reason === "GAME_ALREADY_STARTED") return tr("รอบนี้เริ่มไปแล้ว", "This round has already started");
+      return tr("ไม่พบห้องนี้", "Room not found");
     }
     console.error(err);
-    return "Could not connect to the server. Try again.";
+    return tr("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองอีกครั้ง", "Could not connect to the server. Try again.");
   }
 }

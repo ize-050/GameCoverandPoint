@@ -16,6 +16,13 @@ const MISSION_POOL_BASE: MissionDef[] = [
   { id: "erase-board", roomId: "meeting", title: "CLEAR THE WHITEBOARD", description: "Remove confidential notes", propId: "meeting-whiteboard" },
   { id: "brew-coffee", roomId: "work_b", title: "BREW EMERGENCY COFFEE", description: "Refuel the clock-out crew", propId: "workb-coffee" },
   { id: "print-badge", roomId: "reception", title: "PRINT AN EXIT BADGE", description: "Authorize the escape route", propId: "reception-monitor" },
+  { id: "restart-firewall", roomId: "server", title: "RESTART THE FIREWALL", description: "Clear the suspicious traffic alert", propId: "server-alarm" },
+  { id: "mute-training-video", roomId: "lounge", title: "MUTE THE TRAINING VIDEO", description: "Stop the endless onboarding loop", propId: "lounge-tv" },
+  { id: "approve-expense", roomId: "work_a", title: "APPROVE THE EXPENSE CLAIM", description: "Release the team snack budget", propId: "worka-report" },
+  { id: "cancel-meeting", roomId: "meeting", title: "CANCEL TOMORROW'S MEETING", description: "Free everyone from the calendar invite", propId: "meeting-whiteboard" },
+  { id: "refill-coffee", roomId: "work_b", title: "REFILL THE COFFEE BEANS", description: "Prevent a morning productivity incident", propId: "workb-coffee" },
+  { id: "reset-access", roomId: "reception", title: "RESET THE ACCESS DESK", description: "Restore the employee badge system", propId: "reception-monitor" },
+  { id: "silence-sensor", roomId: "toilet", title: "SILENCE THE TAP SENSOR", description: "Stop the sink from reporting overtime", propId: "toilet-sink" },
 ];
 
 // PART 2 final-polish pass (AI-SPEC-final-polish_1.md §2.2): every mission

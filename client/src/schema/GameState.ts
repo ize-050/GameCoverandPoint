@@ -17,6 +17,7 @@ export class GameState extends Schema {
   @type("number") missionGoal: number = 4;
   @type("string") corporateEvent: string = "";
   @type("number") corporateEventTime: number = 0;
+  @type("boolean") roundPaused: boolean = false;
   @type({ map: "boolean" }) darkRooms = new MapSchema<boolean>();
   @type({ map: "boolean" }) collectedSmokeItems = new MapSchema<boolean>();
   @type({ map: "boolean" }) missions = new MapSchema<boolean>();

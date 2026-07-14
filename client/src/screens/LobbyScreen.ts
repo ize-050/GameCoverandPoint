@@ -5,7 +5,6 @@ import type { GameState } from "../schema/GameState";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import { icon, escapeHtml } from "../dom/icons";
 import { t } from "../i18n/strings";
-import { consumeIntentionalReload } from "../network/reconnect";
 
 export class LobbyScreen implements Screen {
   private navigate: Navigate;
@@ -26,7 +25,7 @@ export class LobbyScreen implements Screen {
     this.navigate = navigate;
   }
 
-  mount(data?: { room: Room<GameState> }) {
+  mount(data?: { room: Room<GameState>; seekerCount?: string; roundsPerMatch?: string }) {
     this.room = data?.room;
     if (!this.room) return;
 
@@ -66,6 +65,10 @@ export class LobbyScreen implements Screen {
     this.startHintEl = this.overlay.querySelector("#startHint") as HTMLDivElement;
     this.readyBtn = this.overlay.querySelector("#readyBtn") as HTMLButtonElement;
 
+    this.renderPlayers();
+    if (data?.seekerCount && this.seekerSelect.querySelector(`option[value="${data.seekerCount}"]`)) this.seekerSelect.value = data.seekerCount;
+    if (data?.roundsPerMatch) this.roundsSelect.value = data.roundsPerMatch;
+
     this.startBtn.addEventListener("click", () => {
       this.room!.send("startGame", { seekerCount: Number(this.seekerSelect!.value), roundsPerMatch: Number(this.roundsSelect!.value) });
     });
@@ -89,13 +92,7 @@ export class LobbyScreen implements Screen {
 
     this.room.onStateChange(this.stateChangeHandler);
     this.unsubs.push(() => this.room?.onStateChange.remove(this.stateChangeHandler));
-    const roomLeaveHandler = () => {
-      // See GameScreen's roomLeaveHandler — a deliberate reload (language
-      // toggle) tears this page down right after this fires anyway, so skip
-      // navigating and let the fresh page's boot() reconnect cleanly.
-      if (consumeIntentionalReload()) return;
-      this.navigate("Menu");
-    };
+    const roomLeaveHandler = () => this.navigate("Menu");
     this.room.onLeave(roomLeaveHandler);
     this.unsubs.push(() => this.room?.onLeave.remove(roomLeaveHandler));
 
@@ -103,6 +100,14 @@ export class LobbyScreen implements Screen {
     // the round is already mid-game, nothing will ever fire onStateChange for
     // a phase that doesn't subsequently change.
     this.checkPhase();
+  }
+
+  getRefreshData() {
+    return {
+      room: this.room,
+      seekerCount: this.seekerSelect?.value,
+      roundsPerMatch: this.roundsSelect?.value,
+    };
   }
 
   unmount() {

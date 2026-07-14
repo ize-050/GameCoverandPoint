@@ -6,6 +6,7 @@
 export interface Screen {
   mount(data?: unknown): void;
   unmount(): void;
+  getRefreshData?(): unknown;
   update?(dt: number): void;
   resize?(width: number, height: number): void;
 }
@@ -16,6 +17,7 @@ export class ScreenManager {
   private screens = new Map<string, Screen>();
   private current: Screen | null = null;
   private currentName: string | null = null;
+  private currentData: unknown;
 
   register(name: string, screen: Screen) {
     this.screens.set(name, screen);
@@ -27,7 +29,16 @@ export class ScreenManager {
     if (!next) throw new Error(`Unknown screen: ${name}`);
     this.current = next;
     this.currentName = name;
+    this.currentData = data;
     next.mount(data);
+  }
+
+  refresh() {
+    if (!this.current) return;
+    const data = this.current.getRefreshData?.() ?? this.currentData;
+    this.current.unmount();
+    this.currentData = data;
+    this.current.mount(data);
   }
 
   get activeName(): string | null {

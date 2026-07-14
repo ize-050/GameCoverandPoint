@@ -16,12 +16,16 @@ export class ResultScreen implements Screen {
     this.navigate = navigate;
   }
 
-  mount(data?: { room: Room<GameState> }) {
+  getRefreshData() {
+    return { room: this.room, skipJingle: true };
+  }
+
+  mount(data?: { room: Room<GameState>; skipJingle?: boolean }) {
     this.room = data?.room;
     if (!this.room) return;
 
     const hiderWon = [...this.room.state.players.values()].some((p) => p.role === "hider" && p.isEscaped);
-    if (this.room.state.phase === "result") playRoundWinSfx();
+    if (this.room.state.phase === "result" && !data?.skipJingle) playRoundWinSfx();
 
     const sorted = [...this.room.state.players.values()].sort((a, b) => b.score - a.score);
     const mvp = sorted[0];

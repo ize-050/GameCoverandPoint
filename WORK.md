@@ -421,3 +421,18 @@ git status
 - เพิ่ม paper-burst 3D effect สำหรับ Printer Meltdown, Mission fail และ Ghost Prank
 - อัปเดต Landing How to Play และ Help panel ให้ตรงกับระบบ Mission แบบใหม่
 - ทดสอบ local ด้วยผู้เล่นหนึ่งคน + Office Bot สามตัว: Corporate Event sync, banner/countdown, Ghost Prank และ cooldown ทำงาน; client/server production build ผ่าน
+
+## Live Language, Reconnect Safety และ Gameplay Variety
+
+- เปลี่ยนปุ่ม TH/EN จากการ reload หน้าเว็บเป็น remount เฉพาะ UI โดยเก็บ Colyseus Room/WebSocket เดิมไว้ จึงไม่หลุด Lobby หรือ Match
+- Landing/Menu แปลครบทั้งไทยและอังกฤษ รวม navigation, story, roles, how-to-play, controls, form, public rooms, loading/error และ footer
+- เก็บ nickname, room code, Public/Private selection, character และตำแหน่ง scroll ไว้เมื่อสลับภาษาบนหน้า Landing
+- Lobby เก็บ room, seeker count และจำนวนรอบไว้เมื่อสลับภาษา; Result ไม่เล่นเสียงชนะซ้ำ; ปุ่มเสียงเปลี่ยนภาษาตาม UI
+- เมื่อ Seeker คนสุดท้ายเน็ตหลุดระหว่าง HIDE/SEEK server จะ pause timer, movement, bot และ action ทุกชนิดสูงสุด 30 วินาที แล้ว resume รอบเดิมเมื่อ reconnect สำเร็จ; จะจบรอบเมื่อหมด grace period หรือออกโดยตั้งใจเท่านั้น
+- เพิ่ม overlay บอกผู้เล่นว่ารอบกำลังรอ Seeker reconnect และเพิ่ม automated reconnect-policy tests ครบ last Seeker, multiple Seekers, intentional leave, Lobby/Result และ Hider leave
+- เพิ่ม automated map tests ตรวจทุก spawn ว่าไม่ชนผนัง และยืนยันว่า spawn, จุดซ่อน และ mission prop ทุกจุดเข้าถึงได้จาก walkable region เดียวกัน
+- เพิ่ม Corporate Events: `Surprise Fire Drill` ให้ Hider ไป Reception และ `Power Saving Mode` ดับไฟสุ่ม 2 ห้องชั่วคราว
+- Bot Hider เข้าใจ Corporate Events: ไป Meeting Room, ไป Reception ตอนซ้อมหนีไฟ, หยุดนิ่งตอน Performance Review และออกจาก Work Zone A ตอน Printer Meltdown
+- เพิ่ม Mission flavour ใหม่ 7 แบบ รวมเป็น 14 แบบ โดยสุ่มหนึ่งภารกิจต่อ terminal เพื่อไม่ให้สองชื่อภารกิจทับจุดเดียวกันในรอบเดียว
+- ตรวจ local browser จริง: สลับภาษาใน Landing แล้วค่าฟอร์มอยู่ครบ, สลับใน Lobby แล้วยังอยู่ room code เดิม 4/10 คน, สลับกลาง Match ไม่หลุด และปิด/เปิด client ฝั่ง Seeker แล้ว reconnect กลับเข้ารอบเดิมสำเร็จ
+- `npm test` ผ่าน 6/6, client production build และ server TypeScript build ผ่าน

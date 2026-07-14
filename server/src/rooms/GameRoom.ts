@@ -33,6 +33,7 @@ import {
   type CorporateEventKind,
 } from "../../../shared/messages.js";
 import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_MISSIONS_BONUS, type MissionDef } from "../../../shared/missions.js";
+import { decideDisconnectAction } from "./reconnectPolicy.js";
 
 const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
 // ~0.8s of sidestepping once a bot commits to a detour (see resolveBotStep) —
@@ -119,6 +120,7 @@ export class GameRoom extends Room<GameState> {
   private corporateEventDeck: CorporateEventKind[] = [];
   private nextCorporateEventAt = GAME_CONFIG.CORPORATE_EVENT_FIRST_SEC;
   private freezeViolators = new Set<string>();
+  private eventDarkRooms = new Set<string>();
   private botPolicyTargets = new Map<string, { playerId: string; x: number; y: number; expiresAt: number }>();
   private botTargets = new Map<string, { x: number; y: number }>();
   // Bots have no real pathfinding (just a straight line to their target), so
@@ -208,6 +210,7 @@ export class GameRoom extends Room<GameState> {
   private tick() {
     this.checkAfkPlayers();
     if (this.state.phase === "lobby") return;
+    if (this.state.roundPaused) return;
 
     if (this.state.phase === "seek") {
       this.updateRelocateWindow();
@@ -263,7 +266,7 @@ export class GameRoom extends Room<GameState> {
 
   private startCorporateEvent() {
     if (this.corporateEventDeck.length === 0) {
-      this.corporateEventDeck = shuffled<CorporateEventKind>(["mandatory_meeting", "freeze_review", "printer_meltdown"]);
+      this.corporateEventDeck = shuffled<CorporateEventKind>(["mandatory_meeting", "freeze_review", "printer_meltdown", "fire_drill", "lights_out"]);
     }
     const kind = this.corporateEventDeck.pop()!;
     this.state.corporateEvent = kind;
@@ -273,9 +276,18 @@ export class GameRoom extends Room<GameState> {
       mandatory_meeting: { title: "MANDATORY MEETING", instruction: "Reach the Meeting Room before the audit ends—or your location is exposed." },
       freeze_review: { title: "PERFORMANCE REVIEW", instruction: "FREEZE! Moving during the review alerts Office Patrol." },
       printer_meltdown: { title: "PRINTER MELTDOWN", instruction: "The report terminal is firing paper blasts. Stay clear of Work Zone A!" },
+      fire_drill: { title: "SURPRISE FIRE DRILL", instruction: "Report to Reception before the drill ends—or your location is exposed." },
+      lights_out: { title: "POWER SAVING MODE", instruction: "Two office zones have gone dark. Keep working and watch your step." },
     } as const;
     this.broadcast("corporateEvent", { kind, ...copy[kind], durationSec: GAME_CONFIG.CORPORATE_EVENT_DURATION_SEC });
     if (kind === "printer_meltdown") this.triggerPrinterBlast();
+    if (kind === "lights_out") {
+      this.eventDarkRooms.clear();
+      shuffled(ROOMS.filter((room) => !this.state.darkRooms.has(room.id))).slice(0, 2).forEach((room) => {
+        this.state.darkRooms.set(room.id, true);
+        this.eventDarkRooms.add(room.id);
+      });
+    }
   }
 
   private finishCorporateEvent() {
@@ -286,6 +298,17 @@ export class GameRoom extends Room<GameState> {
         if (findRoomAt(player.x, player.y)?.id !== "meeting") this.revealPolicyViolation(player, "MISSED THE MEETING");
         else player.score += 10;
       });
+    }
+    if (kind === "fire_drill") {
+      this.state.players.forEach((player) => {
+        if (player.role !== "hider" || player.isCaught || player.isEscaped) return;
+        if (findRoomAt(player.x, player.y)?.id !== "reception") this.revealPolicyViolation(player, "MISSED THE FIRE DRILL");
+        else player.score += 10;
+      });
+    }
+    if (kind === "lights_out") {
+      this.eventDarkRooms.forEach((roomId) => this.state.darkRooms.delete(roomId));
+      this.eventDarkRooms.clear();
     }
     this.state.corporateEvent = "";
     this.state.corporateEventTime = 0;
@@ -488,14 +511,34 @@ export class GameRoom extends Room<GameState> {
   }
 
   private tickBots() {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
     const dt = BOT_TICK_MS / 1000;
     const bots = [...this.state.players.values()].filter((player) => player.isBot && !player.isCaught && !player.isEscaped);
     for (const bot of bots) {
       if (bot.role === "seeker" && this.state.phase === "hide") continue;
-      if (bot.isHidden) continue;
+      if (bot.isHidden) {
+        const mustAttend = bot.role === "hider" && (this.state.corporateEvent === "mandatory_meeting" || this.state.corporateEvent === "fire_drill");
+        if (!mustAttend) continue;
+        this.freeCoverPoint(bot.coverPointId, bot.id);
+        bot.isHidden = false;
+        bot.coverPointId = "";
+      }
 
       let target: { x: number; y: number } | undefined;
+      if (bot.role === "hider" && this.state.corporateEvent === "freeze_review") {
+        bot.anim = "idle";
+        continue;
+      }
+      if (bot.role === "hider" && (this.state.corporateEvent === "mandatory_meeting" || this.state.corporateEvent === "fire_drill")) {
+        const requiredRoomId = this.state.corporateEvent === "mandatory_meeting" ? "meeting" : "reception";
+        const requiredRoom = ROOMS.find((room) => room.id === requiredRoomId);
+        if (requiredRoom) target = { x: requiredRoom.x + requiredRoom.w / 2, y: requiredRoom.y + requiredRoom.h / 2 };
+      }
+      if (bot.role === "hider" && this.state.corporateEvent === "printer_meltdown" && findRoomAt(bot.x, bot.y)?.id === "work_a") {
+        const reception = ROOMS.find((room) => room.id === "reception");
+        if (reception) target = { x: reception.x + reception.w / 2, y: reception.y + reception.h / 2 };
+      }
       if (bot.role === "seeker") {
         const policyTarget = this.botPolicyTargets.get(bot.id);
         if (policyTarget && policyTarget.expiresAt > Date.now()) {
@@ -547,7 +590,7 @@ export class GameRoom extends Room<GameState> {
         const mission = activeMissionId ? MISSION_POOL.find((candidate) => candidate.id === activeMissionId) : undefined;
         const missionProp = mission ? ROOM_PROPS.find((candidate) => candidate.id === mission.propId) : undefined;
 
-        if (mission && missionProp && Math.hypot(bot.x - missionProp.x, bot.y - missionProp.y) <= GAME_CONFIG.ROOM_PROP_RANGE_PX) {
+        if (!target && mission && missionProp && Math.hypot(bot.x - missionProp.x, bot.y - missionProp.y) <= GAME_CONFIG.ROOM_PROP_RANGE_PX) {
           const now = Date.now();
           const interaction = this.missionStartedAt.get(bot.id);
           if (!interaction || interaction.missionId !== mission.id) {
@@ -568,7 +611,7 @@ export class GameRoom extends Room<GameState> {
         this.missionStartedAt.delete(bot.id);
 
         if (missionProp) {
-          target = missionProp;
+          target ??= missionProp;
         } else {
           const nearby = [...this.state.coverPoints.values()].find((cp) =>
             !cp.isOccupied && !this.roundDecoyCoverPointIds.has(cp.id) && Math.hypot(bot.x - cp.x, bot.y - cp.y) < GAME_CONFIG.HIDE_RANGE_PX
@@ -684,28 +727,33 @@ export class GameRoom extends Room<GameState> {
     this.updateListing();
   }
 
-  private hasConnectedSeeker(): boolean {
-    return this.clients.some((c) => this.state.players.get(c.sessionId)?.role === "seeker");
-  }
-
   async onLeave(client: Client, consented: boolean) {
     const leavingPlayer = this.state.players.get(client.sessionId);
     const wasHost = leavingPlayer?.isHost;
 
-    // DoD: don't let the round hang on a disconnected seeker. Checked immediately
-    // against currently-connected clients — independent of the reconnection grace
-    // window below, so a flaky wifi drop still ends the round right away for
-    // everyone else even though the seeker personally gets a chance to rejoin.
-    if ((this.state.phase === "hide" || this.state.phase === "seek") && leavingPlayer?.role === "seeker" && !this.hasConnectedSeeker()) {
-      this.endRound();
-    }
+    const hasOtherConnectedSeeker = this.clients.some(
+      (candidate) => candidate.sessionId !== client.sessionId && this.state.players.get(candidate.sessionId)?.role === "seeker"
+    );
+    const disconnectAction = decideDisconnectAction({
+      phase: this.state.phase,
+      role: leavingPlayer?.role,
+      consented,
+      hasOtherConnectedSeeker,
+    });
+    if (disconnectAction === "end_round") this.endRound();
+    if (disconnectAction === "pause_for_reconnect") this.state.roundPaused = true;
 
     // Phase 5: reconnect within 30s and resume the same seat/state (spec DoD).
     if (!consented) {
       try {
         await this.allowReconnection(client, 30);
+        if (disconnectAction === "pause_for_reconnect") this.state.roundPaused = false;
         return; // reconnected — player entry was never removed, nothing else to do
       } catch {
+        if (disconnectAction === "pause_for_reconnect") {
+          this.state.roundPaused = false;
+          if (this.state.phase === "hide" || this.state.phase === "seek") this.endRound();
+        }
         // grace period expired — fall through to full cleanup
       }
     }
@@ -735,6 +783,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleEmote(client: Client, message: EmoteMessage) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.isCaught) return; // ghosts can't emote (spec 2.5/2.3)
     if (!Number.isInteger(message?.id) || message.id < 1 || message.id > 4) return;
@@ -850,11 +899,16 @@ export class GameRoom extends Room<GameState> {
     this.state.darkRooms.clear();
     this.state.collectedSmokeItems.clear();
     this.state.missions.clear();
-    this.missionQueue = shuffled(MISSION_POOL).slice(0, MISSIONS_PER_ROUND);
+    // Pick one flavour variant per physical terminal so a round never shows
+    // two different tasks on the exact same prop at once.
+    const missionVariants = new Map<string, MissionDef[]>();
+    MISSION_POOL.forEach((mission) => missionVariants.set(mission.propId, [...(missionVariants.get(mission.propId) ?? []), mission]));
+    this.missionQueue = shuffled([...missionVariants.values()].map((variants) => shuffled(variants)[0])).slice(0, MISSIONS_PER_ROUND);
     this.state.missionsCompleted = 0;
     this.state.missionGoal = MISSIONS_PER_ROUND;
     this.state.corporateEvent = "";
     this.state.corporateEventTime = 0;
+    this.state.roundPaused = false;
     this.state.phase = "role_reveal";
     this.state.timeRemaining = GAME_CONFIG.ROLE_REVEAL_SEC;
     this.updateListing();
@@ -905,6 +959,7 @@ export class GameRoom extends Room<GameState> {
     this.state.relocateActive = false;
     this.state.corporateEvent = "";
     this.state.corporateEventTime = 0;
+    this.state.roundPaused = false;
     this.state.darkRooms.clear();
     this.state.phase = "result";
     this.state.timeRemaining = GAME_CONFIG.RESULT_SEC;
@@ -912,6 +967,7 @@ export class GameRoom extends Room<GameState> {
 
   private beginLobby() {
     this.state.phase = "lobby";
+    this.state.roundPaused = false;
     this.state.timeRemaining = 0;
     this.state.players.forEach((player) => (player.isReady = player.isBot));
     this.unlock();
@@ -919,6 +975,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleMove(client: Client, message: MoveMessage) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
@@ -1011,6 +1068,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleUseItem(client: Client) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isHidden || !player.heldItem) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
@@ -1042,6 +1100,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleStartMission(client: Client, message: { missionId?: string }) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "seek") return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isEscaped || player.isHidden || !message?.missionId) return;
@@ -1062,6 +1121,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleFailMission(client: Client, message: { missionId?: string }) {
+    if (this.state.roundPaused) return;
     const interaction = this.missionStartedAt.get(client.sessionId);
     if (!interaction || interaction.missionId !== message?.missionId) return;
     this.missionStartedAt.delete(client.sessionId);
@@ -1073,6 +1133,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleCompleteMission(client: Client, message: { missionId?: string; sequence?: string }) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "seek") return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isEscaped || player.isHidden) return;
@@ -1144,6 +1205,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleHide(client: Client, message: CoverPointMessage) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
 
     const player = this.state.players.get(client.sessionId);
@@ -1173,6 +1235,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleUnhide(client: Client) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
 
     const player = this.state.players.get(client.sessionId);
@@ -1194,6 +1257,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleInspect(client: Client, message: CoverPointMessage) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "seek") return;
 
     const seeker = this.state.players.get(client.sessionId);
@@ -1256,6 +1320,7 @@ export class GameRoom extends Room<GameState> {
   // budget cost: this is a skill/positioning reward, deliberately separate
   // from the cover-point-search economy.
   private handleTag(client: Client) {
+    if (this.state.roundPaused) return;
     if (this.state.phase !== "seek") return;
 
     const seeker = this.state.players.get(client.sessionId);
@@ -1279,6 +1344,7 @@ export class GameRoom extends Room<GameState> {
   // Visible moving clone. Everyone sees the same fake player, including the
   // owner, so the item has readable feedback and can genuinely fool seekers.
   private handleDecoy(client: Client, bypassCooldown = false) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
@@ -1299,6 +1365,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private handleGhostPrank(client: Client) {
+    if (this.state.roundPaused) return;
     const ghost = this.state.players.get(client.sessionId);
     if (!ghost?.isCaught || this.state.phase !== "seek") return;
     const now = Date.now();
@@ -1321,6 +1388,7 @@ export class GameRoom extends Room<GameState> {
   // whiteboard/coffee-machine/monitor stay hider-only. chair/alarm-light
   // have no active ability, just serve as physical anchors/flavor.
   private handleUseProp(client: Client, message: UsePropMessage) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.isCaught) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
@@ -1374,6 +1442,7 @@ export class GameRoom extends Room<GameState> {
   // to the seeker in the 3D world via the normal visibility rules, so
   // there's nothing this ability needs to reveal about them.
   private handleScanPulse(client: Client) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "seeker" || player.isCaught) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
@@ -1483,6 +1552,7 @@ export class GameRoom extends Room<GameState> {
   // everyone, then dazes (slows + fogs the screen of) any seeker caught
   // within the blast radius at that instant.
   private handleUseSmoke(client: Client) {
+    if (this.state.roundPaused) return;
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || !player.hasSmokeBomb) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;

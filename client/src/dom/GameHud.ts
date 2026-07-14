@@ -56,6 +56,7 @@ export class GameHud {
   private missionsEl: HTMLDivElement;
   private corporateEventEl: HTMLDivElement;
   private challengeEl: HTMLDivElement;
+  private reconnectPauseEl: HTMLDivElement;
   private roleBannerTimeout?: ReturnType<typeof setTimeout>;
   private feedbackTimeout?: ReturnType<typeof setTimeout>;
   private helpVisible = false;
@@ -73,6 +74,7 @@ export class GameHud {
       <div id="hudFeedback" style="position:absolute;top:20%;left:50%;transform:translateX(-50%);font-size:18px;color:#ffe066;background:#000000aa;padding:10px 16px;border-radius:10px;text-align:center;display:none;align-items:center;gap:8px;justify-content:center;"></div>
       <div id="hudCorporateEvent" style="position:absolute;top:72px;left:50%;transform:translateX(-50%);width:min(520px,calc(100vw - 32px));box-sizing:border-box;color:#fff;background:linear-gradient(135deg,#7f1d1dee,#b45309ee);border:2px solid #fbbf24;border-radius:14px;padding:10px 18px;text-align:center;display:none;box-shadow:0 0 28px #f59e0b55;"></div>
       <div id="hudChallenge" style="position:absolute;bottom:128px;left:50%;transform:translateX(-50%);width:min(440px,calc(100vw - 32px));box-sizing:border-box;color:#fff;background:#07111df2;border:2px solid #22d3ee;border-radius:14px;padding:14px 18px;text-align:center;display:none;box-shadow:0 0 26px #22d3ee44;"></div>
+      <div id="hudReconnectPause" style="position:absolute;inset:0;background:#020617d9;display:none;align-items:center;justify-content:center;z-index:4;"><div style="max-width:420px;color:#fff;background:#0f172af2;border:2px solid #fbbf24;border-radius:16px;padding:24px;text-align:center;font-weight:800;box-shadow:0 0 32px #f59e0b44;"></div></div>
       <div id="hudRoleBanner" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;">
         <div style="background:#000000d9;padding:30px 50px;border-radius:16px;font-size:30px;color:#fff;text-align:center;display:flex;align-items:center;gap:14px;"></div>
       </div>
@@ -107,6 +109,7 @@ export class GameHud {
     this.missionsEl = this.root.querySelector("#hudMissions") as HTMLDivElement;
     this.corporateEventEl = this.root.querySelector("#hudCorporateEvent") as HTMLDivElement;
     this.challengeEl = this.root.querySelector("#hudChallenge") as HTMLDivElement;
+    this.reconnectPauseEl = this.root.querySelector("#hudReconnectPause") as HTMLDivElement;
     this.itemEl.addEventListener("click", onUseItem);
 
     (this.root.querySelector("#hudHelpBtn") as HTMLButtonElement).addEventListener("click", () => {
@@ -232,6 +235,8 @@ export class GameHud {
       mandatory_meeting: [t("event.meetingTitle"), t("event.meetingBody")],
       freeze_review: [t("event.freezeTitle"), t("event.freezeBody")],
       printer_meltdown: [t("event.printerTitle"), t("event.printerBody")],
+      fire_drill: [t("event.fireTitle"), t("event.fireBody")],
+      lights_out: [t("event.lightsTitle"), t("event.lightsBody")],
     };
     const [title, instruction] = copy[kind] ?? [kind, t("event.fallback")];
     this.corporateEventEl.style.display = "block";
@@ -246,6 +251,11 @@ export class GameHud {
     this.challengeEl.style.display = "block";
     const keys = sequence.map((key, index) => `<span style="display:inline-flex;width:38px;height:38px;margin:7px 4px;align-items:center;justify-content:center;border-radius:8px;font-size:20px;font-weight:950;background:${index < current ? "#16a34a" : index === current ? "#0891b2" : "#1e293b"};border:1px solid ${index === current ? "#67e8f9" : "#ffffff22"};">${key}</span>`).join("");
     this.challengeEl.innerHTML = `<div style="font-size:12px;color:#facc15;font-weight:900;letter-spacing:.08em;">${t("hud.skillCheck", { sec: seconds })}</div><div style="font-size:13px;margin-top:3px;">${title}</div><div>${keys}</div><div style="font-size:11px;color:#94a3b8;">${t("hud.skillCheckWrong")}</div>`;
+  }
+
+  setReconnectPause(active: boolean) {
+    this.reconnectPauseEl.style.display = active ? "flex" : "none";
+    if (active) (this.reconnectPauseEl.firstElementChild as HTMLDivElement).innerHTML = t("hud.reconnectPause");
   }
 
   // Seeker's equivalent of the hider mission panel — reuses the same corner

@@ -19,7 +19,7 @@ import {
 } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import { NetworkManager } from "../network/NetworkManager";
-import { loadReconnectToken, clearReconnectToken, consumeIntentionalReload } from "../network/reconnect";
+import { loadReconnectToken, clearReconnectToken } from "../network/reconnect";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import type {
   CharacterAppearance,
@@ -384,7 +384,7 @@ export class GameScreen implements Screen {
     if (this.room && this.localPlayer && this.myPlayer) {
       const isGhost = this.myPlayer.isCaught;
       const blackedOut = phase === "hide" && this.myPlayer.role === "seeker";
-      const canMove = (phase === "hide" || phase === "seek") && !blackedOut && !this.myPlayer.isHidden && !this.missionInteractionId;
+      const canMove = (phase === "hide" || phase === "seek") && !this.room.state.roundPaused && !blackedOut && !this.myPlayer.isHidden && !this.missionInteractionId;
 
       this.localPlayer.update(dt * 1000, {
         canMove,
@@ -398,7 +398,7 @@ export class GameScreen implements Screen {
       });
       if (isGhost) this.ensureSpectatorCamera();
       if (isGhost && keyboard.justDown("KeyC")) this.cycleTeammateCamera(true);
-      if (isGhost && phase === "seek" && keyboard.justDown("KeyQ") && performance.now() >= this.ghostPrankCooldownUntil) {
+      if (isGhost && !this.room.state.roundPaused && phase === "seek" && keyboard.justDown("KeyQ") && performance.now() >= this.ghostPrankCooldownUntil) {
         this.ghostPrankCooldownUntil = performance.now() + GAME_CONFIG.GHOST_PRANK_COOLDOWN_MS;
         this.room.send("ghostPrank");
       }
@@ -416,17 +416,17 @@ export class GameScreen implements Screen {
       // drag a hidden player around), but SPACE's own job while hidden is
       // to un-hide. handleSpacePress (and the server) already gate what
       // each role/phase is allowed to do from here.
-      if (!isGhost && (phase === "hide" || phase === "seek") && keyboard.justDown("Space")) this.handleSpacePress();
+      if (!isGhost && !this.room.state.roundPaused && (phase === "hide" || phase === "seek") && keyboard.justDown("Space")) this.handleSpacePress();
       if (!isGhost) {
         EMOTE_KEYS.forEach((code, idx) => {
           if (keyboard.justDown(code)) this.room!.send("emote", { id: idx + 1 });
         });
-        if (this.myPlayer.role === "hider") {
+        if (this.myPlayer.role === "hider" && !this.room.state.roundPaused) {
           if (keyboard.justDown("KeyQ") && this.myPlayer.heldItem) this.room!.send("useItem");
           this.updateMissionInteraction();
           if (keyboard.justDown("KeyC")) this.cycleTeammateCamera();
         }
-        if (this.myPlayer.role === "seeker") {
+        if (this.myPlayer.role === "seeker" && !this.room.state.roundPaused) {
           if (keyboard.justDown("KeyF") && performance.now() >= this.scanCooldownUntil) {
             this.scanCooldownUntil = performance.now() + GAME_CONFIG.SCAN_COOLDOWN_MS;
             const pos = this.localPlayer.character.position;
@@ -529,6 +529,7 @@ export class GameScreen implements Screen {
     const timeRemaining = this.room.state.timeRemaining;
     musicPlayer.setMood(phase === "seek" && timeRemaining <= URGENT_TIME_SEC ? "urgent" : phase === "seek" ? "tense" : "calm");
     this.hud.setTimer(phase, timeRemaining, performance.now());
+    this.hud.setReconnectPause(this.room.state.roundPaused);
 
     const blackedOut = phase === "hide" && this.myPlayer?.role === "seeker";
     this.hud.setBlackout(!!blackedOut, timeRemaining);
@@ -696,7 +697,15 @@ export class GameScreen implements Screen {
     this.unsubs.push(offSmokeDeployed);
 
     const offCorporateEvent = room.onMessage("corporateEvent", (msg: CorporateEventMessage) => {
-      this.hud?.showFeedback(`📢 ${escapeHtml(msg.title)}<br/><span style="font-size:13px;color:#fff">${escapeHtml(msg.instruction)}</span>`, 3200);
+      const eventCopy: Record<string, [string, string]> = {
+        mandatory_meeting: [t("event.meetingTitle"), t("event.meetingBody")],
+        freeze_review: [t("event.freezeTitle"), t("event.freezeBody")],
+        printer_meltdown: [t("event.printerTitle"), t("event.printerBody")],
+        fire_drill: [t("event.fireTitle"), t("event.fireBody")],
+        lights_out: [t("event.lightsTitle"), t("event.lightsBody")],
+      };
+      const [title, instruction] = eventCopy[msg.kind] ?? [msg.title, msg.instruction];
+      this.hud?.showFeedback(`📢 ${escapeHtml(title)}<br/><span style="font-size:13px;color:#fff">${escapeHtml(instruction)}</span>`, 3200);
       playServerAlarmSfx();
     });
     const offCorporateEventEnd = room.onMessage("corporateEventEnd", () => {
@@ -842,10 +851,6 @@ export class GameScreen implements Screen {
     // instead of dumping the player at the Menu, where a fresh join would
     // just get rejected anyway once the match isn't in "lobby" phase anymore.
     const roomLeaveHandler = (code: number) => {
-      // A deliberate reload (language toggle) is about to tear this page
-      // down anyway — let the fresh page's own boot() be the only thing
-      // that reconnects, instead of racing it for the same one-time token.
-      if (consumeIntentionalReload()) return;
       if (code === 1000) {
         this.navigate("Menu");
         return;
@@ -869,6 +874,10 @@ export class GameScreen implements Screen {
     // Self-correct immediately — a reconnect landing here mid-round shouldn't
     // wait for a future phase change that may never come.
     this.checkPhase();
+  }
+
+  getRefreshData() {
+    return { room: this.room };
   }
 
   private checkPhase() {
