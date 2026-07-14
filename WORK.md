@@ -447,3 +447,9 @@ git status
 - Room join ส่ง Guest ID/session ไป server และ Lobby แสดง verified badge เฉพาะบัญชีที่ server ตรวจสำเร็จ ไม่เชื่อสถานะ Login ที่ client ส่งมาเอง
 - เพิ่ม environment templates และขั้นตอนตั้ง Google OAuth สำหรับ localhost, Vercel และ custom domain ใน README
 - เพิ่ม automated auth tests สำหรับ valid session, token tampering, wrong secret และ expiry; test suite รวมผ่าน 9/9
+
+## Language Toggle Safe-Area Fix
+
+- แก้ปุ่ม `TH/EN` มุมขวาบนถูก scrollbar ตัดในหน้า Landing โดยเพิ่มระยะจากขอบ 20px และรองรับ `safe-area-inset-right`
+- ในหน้า Game ขยับปุ่มภาษาไปทางซ้าย 78px เพื่อไม่ทับปุ่ม Help ขณะที่ minimap ด้านล่างยังอยู่ตำแหน่งเดิม
+- ใช้ตำแหน่งตาม screen ปัจจุบัน จึงไม่ต้อง reload และไม่กระทบระบบ Lobby/reconnect

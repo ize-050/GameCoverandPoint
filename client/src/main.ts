@@ -39,7 +39,11 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
 const screens = new ScreenManager();
-const navigate: Navigate = (name, data) => screens.show(name, data);
+let syncGlobalControls = () => {};
+const navigate: Navigate = (name, data) => {
+  screens.show(name, data);
+  syncGlobalControls();
+};
 
 screens.register("Menu", new MenuScreen(navigate));
 screens.register("Lobby", new LobbyScreen(navigate));
@@ -89,7 +93,15 @@ document.body.appendChild(muteBtn);
 // without covering the in-game help button or minimap.
 const langBtn = document.createElement("button");
 langBtn.style.cssText =
-  "position:fixed;top:18px;right:4px;z-index:999;min-width:38px;height:26px;font-size:11px;font-weight:900;line-height:1;background:#0a0f1ccc;color:#fff;border:1px solid #ffffff2a;border-radius:13px;padding:0 7px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0.72;transition:opacity .15s;";
+  "position:fixed;top:18px;right:calc(20px + env(safe-area-inset-right, 0px));z-index:999;min-width:38px;height:26px;font-size:11px;font-weight:900;line-height:1;background:#0a0f1ccc;color:#fff;border:1px solid #ffffff2a;border-radius:13px;padding:0 7px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0.72;transition:opacity .15s,right .15s;box-sizing:border-box;";
+syncGlobalControls = () => {
+  // In-game the help button occupies the top-right corner. Keep language to
+  // its left; on menus use a scrollbar/safe-area inset so the pill is never
+  // clipped by the viewport edge.
+  langBtn.style.right = screens.activeName === "Game"
+    ? "calc(78px + env(safe-area-inset-right, 0px))"
+    : "calc(20px + env(safe-area-inset-right, 0px))";
+};
 const renderLanguageButton = () => {
   langBtn.textContent = getLang().toUpperCase();
   langBtn.title = t("lang.toggle");
@@ -132,13 +144,13 @@ async function boot() {
   if (token) {
     try {
       const room = await new NetworkManager().reconnect(token);
-      screens.show(screenForPhase(room.state.phase), { room });
+      navigate(screenForPhase(room.state.phase), { room });
       return;
     } catch {
       clearReconnectToken();
     }
   }
-  screens.show("Menu");
+  navigate("Menu");
 }
 boot();
 
