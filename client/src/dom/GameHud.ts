@@ -1,36 +1,39 @@
 import { icon, EMOTE_ICON_NAMES } from "./icons";
 import type { MissionDef } from "../../../shared/missions";
+import { t } from "../i18n/strings";
 
 const URGENT_TIME_SEC = 30;
 
-const HELP_HTML = `
-  <div style="font-weight:800;margin-bottom:10px;">วิธีเล่น</div>
-  <div style="margin-bottom:6px;">${icon("keyboard", { size: 15 })} WASD / ลูกศร — เดิน</div>
-  <div style="margin-bottom:6px;">กล้อง isometric ล็อกมุมและซูมเท่ากันสำหรับผู้เล่นทุกคน</div>
-  <div style="margin-bottom:6px;">M — ขยาย/ย่อ minimap</div>
-  <div style="margin-bottom:6px;">␣ SPACE — ซ่อนตัว (คนซ่อน) / จับ-ตรวจ (คนหา)</div>
-  <div style="margin-bottom:6px;">E — เริ่ม Office Mission แล้วกด WASD ตาม sequence ก่อนเวลาหมด</div>
-  <div style="margin-bottom:6px;">C — Hider: สลับกล้องไปดูเพื่อน 4 วินาที</div>
+function helpHtml(): string {
+  return `
+  <div style="font-weight:800;margin-bottom:10px;">${t("help.title")}</div>
+  <div style="margin-bottom:6px;">${icon("keyboard", { size: 15 })} ${t("help.move")}</div>
+  <div style="margin-bottom:6px;">${t("help.camera")}</div>
+  <div style="margin-bottom:6px;">${t("help.minimap")}</div>
+  <div style="margin-bottom:6px;">${t("help.space")}</div>
+  <div style="margin-bottom:6px;">${t("help.mission")}</div>
+  <div style="margin-bottom:6px;">${t("help.camSwitch")}</div>
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;">
-    1 2 3 4 — ส่งอีโมจิ
+    ${t("help.emote")}
     ${EMOTE_ICON_NAMES.map((n) => icon(n, { size: 15 })).join("")}
   </div>
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("hider", { size: 16, color: "#fbbf24" })} <b>คนซ่อน</b></div>
-  <div style="margin-bottom:4px;">กด SPACE เพื่อซ่อนจนกว่าจะกดออกเอง จากนั้นจุดเดิม cooldown 12 วินาทีเฉพาะคุณ</div>
-  <div style="margin-bottom:4px;">คนหาจะไม่เห็นตำแหน่งคุณเลยตอนซ่อนอยู่ แต่ถ้าเดินโล่งๆ คนหาจับได้ทันที</div>
-  <div style="margin-bottom:4px;">เดินผ่านกล่องของขวัญเพื่อสุ่มไอเท็ม และกด Q เพื่อใช้ (ถือได้ครั้งละ 1 ชิ้น)</div>
-  <div style="margin-bottom:4px;">ทำ Mission 4 จุด (ขึ้นครั้งละ 2) เพื่อปลดล็อก EXIT ที่ Reception แล้วกด SPACE เพื่อหนี</div>
-  <div style="margin-bottom:12px;">เข้าใกล้ของในห้องแล้วกด SPACE: กระดาน (หลอกคนหา) / เครื่องชงกาแฟ (วิ่งเร็วขึ้น) / จอมอนิเตอร์ (ดูตำแหน่งห้องของคนหา)</div>
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>สวิตช์ไฟ (ทุกคน)</b></div>
-  <div style="margin-bottom:4px;">เข้าใกล้สวิตช์ข้างประตูแล้วกด SPACE เพื่อเปิด/ปิดไฟห้องนั้น</div>
-  <div style="margin-bottom:12px;">ห้องมืดพร้อมกันได้สูงสุด 3 ห้อง — คนในห้องมืดเห็นแค่รัศมีรอบตัว</div>
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("seeker", { size: 16, color: "#22d3ee" })} <b>คนหา</b></div>
-  <div style="margin-bottom:4px;">เข้าใกล้คนซ่อนที่ไม่ได้ซ่อนแล้วกด SPACE จับได้ทันที ไม่จำกัดจำนวนครั้ง</div>
-  <div style="margin-bottom:4px;">หรือเข้าใกล้จุดซ่อนแล้วกด SPACE เพื่อตรวจ — มีคนซ่อนอยู่ = จับได้ทันที</div>
-  <div style="margin-bottom:4px;">ตรวจจุดซ่อนได้จำกัดจำนวนครั้งต่อรอบ ใช้ให้คุ้ม!</div>
-  <div style="margin-bottom:12px;">ระวัง — เข้าห้อง Server จะมีเสียงเตือนไปหาคนซ่อนทุกคน</div>
-  <div>จุดซ่อนบางจุดเป็นของหลอก ดูเหมือนจริงแต่ซ่อนไม่ได้</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("hider", { size: 16, color: "#fbbf24" })} <b>${t("help.hiderTitle")}</b></div>
+  <div style="margin-bottom:4px;">${t("help.hider1")}</div>
+  <div style="margin-bottom:4px;">${t("help.hider2")}</div>
+  <div style="margin-bottom:4px;">${t("help.hider3")}</div>
+  <div style="margin-bottom:4px;">${t("help.hider4")}</div>
+  <div style="margin-bottom:12px;">${t("help.hider5")}</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("lightbulb", { size: 16, color: "#fbbf24" })} <b>${t("help.lightTitle")}</b></div>
+  <div style="margin-bottom:4px;">${t("help.light1")}</div>
+  <div style="margin-bottom:12px;">${t("help.light2")}</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("seeker", { size: 16, color: "#22d3ee" })} <b>${t("help.seekerTitle")}</b></div>
+  <div style="margin-bottom:4px;">${t("help.seeker1")}</div>
+  <div style="margin-bottom:4px;">${t("help.seeker2")}</div>
+  <div style="margin-bottom:4px;">${t("help.seeker3")}</div>
+  <div style="margin-bottom:12px;">${t("help.serverWarn")}</div>
+  <div>${t("help.decoyNote")}</div>
 `;
+}
 
 // Screen-space HUD as a plain DOM overlay (per the plan) — everything here is
 // 2D chrome on top of the persistent 3D canvas; world-space effects (catch
@@ -97,7 +100,7 @@ export class GameHud {
     this.blackoutEl = this.root.querySelector("#hudBlackout") as HTMLDivElement;
     this.dazedEl = this.root.querySelector("#hudDazed") as HTMLDivElement;
     this.helpPanelEl = this.root.querySelector("#hudHelpPanel") as HTMLDivElement;
-    this.helpPanelEl.innerHTML = HELP_HTML;
+    this.helpPanelEl.innerHTML = helpHtml();
     this.abilitiesEl = this.root.querySelector("#hudAbilities") as HTMLDivElement;
     this.hintEl = this.root.querySelector("#hudHint") as HTMLDivElement;
     this.itemEl = this.root.querySelector("#hudItem") as HTMLDivElement;
@@ -152,7 +155,7 @@ export class GameHud {
       return;
     }
     this.inspectsEl.style.display = "flex";
-    this.inspectsEl.innerHTML = `${icon("search", { size: 15 })} ตรวจเหลือ ${count}/${max}`;
+    this.inspectsEl.innerHTML = `${icon("search", { size: 15 })} ${t("hud.inspectsRemaining", { count, max })}`;
     this.inspectsEl.style.color = count <= 2 ? "#ff5252" : "#fbbf24";
   }
 
@@ -164,8 +167,8 @@ export class GameHud {
     this.relocateEl.style.display = "flex";
     this.relocateEl.innerHTML =
       role === "hider"
-        ? `${icon("run", { size: 15 })} ภารกิจ: ย้ายที่ซ่อนตอนนี้! (+15 แต้ม)`
-        : `${icon("eyes", { size: 15 })} คนซ่อนกำลังโยกย้าย...`;
+        ? `${icon("run", { size: 15 })} ${t("hud.relocateHider")}`
+        : `${icon("eyes", { size: 15 })} ${t("hud.relocateSeeker")}`;
   }
 
   // Seeker's scan (F) cooldown — hidden while ready (the hint pill already
@@ -177,7 +180,7 @@ export class GameHud {
       return;
     }
     this.scanCooldownEl.style.display = "flex";
-    this.scanCooldownEl.innerHTML = `${icon("clock", { size: 13 })} สแกนพร้อมใช้อีก ${remainingSec} วิ`;
+    this.scanCooldownEl.innerHTML = `${icon("clock", { size: 13 })} ${t("hud.scanCooldown", { sec: remainingSec })}`;
   }
 
   // Contextual "what does SPACE do right now" prompt — without this, nothing
@@ -202,8 +205,8 @@ export class GameHud {
   setHeldItem(item: string, visible: boolean) {
     this.itemEl.style.display = visible ? "block" : "none";
     if (!visible) return;
-    const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
-    this.itemEl.textContent = item ? `${labels[item] ?? item} · กด Q ใช้` : "ช่องไอเท็มว่าง";
+    const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint") };
+    this.itemEl.textContent = item ? `${labels[item] ?? item} · ${t("hud.itemUseHint")}` : t("hud.itemSlotEmpty");
     this.itemEl.style.opacity = item ? "1" : "0.55";
     const styles: Record<string, string> = {
       smoke: "linear-gradient(135deg,#334155dd,#94a3b8dd)", decoy: "linear-gradient(135deg,#7c3aeddd,#ec4899dd)",
@@ -215,9 +218,9 @@ export class GameHud {
   setMissions(missions: MissionDef[], completed: Set<string>, visible: boolean, exitUnlocked = false, totalDone = 0, missionGoal = missions.length) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
-    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">HIDER MISSIONS ${totalDone}/${missionGoal}</div><div style="color:#94a3b8;margin-bottom:7px;">2 active tasks · press E, then match WASD.</div>` +
+    this.missionsEl.innerHTML = `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">${t("hud.hiderMissions", { done: totalDone, goal: missionGoal })}</div><div style="color:#94a3b8;margin-bottom:7px;">${t("hud.missionSub")}</div>` +
       missions.map((mission) => `<div style="margin:4px 0;color:${completed.has(mission.id) ? "#86efac" : "#e2e8f0"};text-decoration:${completed.has(mission.id) ? "line-through" : "none"}">${completed.has(mission.id) ? "✓" : "◆"} ${mission.title}</div>`).join("") +
-      `<div style="margin-top:9px;padding-top:7px;border-top:1px solid #ffffff22;color:${exitUnlocked ? "#4ade80" : "#fca5a5"};font-weight:800;">${exitUnlocked ? "🚪 EXIT OPEN — ESCAPE AT RECEPTION" : "🔒 EXIT LOCKED"}</div>`;
+      `<div style="margin-top:9px;padding-top:7px;border-top:1px solid #ffffff22;color:${exitUnlocked ? "#4ade80" : "#fca5a5"};font-weight:800;">${exitUnlocked ? t("hud.exitOpen") : t("hud.exitLocked")}</div>`;
   }
 
   setCorporateEvent(kind: string, seconds: number) {
@@ -226,11 +229,11 @@ export class GameHud {
       return;
     }
     const copy: Record<string, [string, string]> = {
-      mandatory_meeting: ["📢 MANDATORY MEETING", "Reach the Meeting Room before the audit ends"],
-      freeze_review: ["🧊 PERFORMANCE REVIEW", "FREEZE — moving reveals you to Office Patrol"],
-      printer_meltdown: ["🖨️ PRINTER MELTDOWN", "Stay clear of the Report Terminal in Work Zone A"],
+      mandatory_meeting: [t("event.meetingTitle"), t("event.meetingBody")],
+      freeze_review: [t("event.freezeTitle"), t("event.freezeBody")],
+      printer_meltdown: [t("event.printerTitle"), t("event.printerBody")],
     };
-    const [title, instruction] = copy[kind] ?? [kind, "Follow company policy"];
+    const [title, instruction] = copy[kind] ?? [kind, t("event.fallback")];
     this.corporateEventEl.style.display = "block";
     this.corporateEventEl.innerHTML = `<div style="font-weight:950;letter-spacing:.09em;color:#fef3c7;">${title} · ${seconds}s</div><div style="font-size:12px;margin-top:3px;color:#fff7ed;">${instruction}</div>`;
   }
@@ -242,7 +245,7 @@ export class GameHud {
     }
     this.challengeEl.style.display = "block";
     const keys = sequence.map((key, index) => `<span style="display:inline-flex;width:38px;height:38px;margin:7px 4px;align-items:center;justify-content:center;border-radius:8px;font-size:20px;font-weight:950;background:${index < current ? "#16a34a" : index === current ? "#0891b2" : "#1e293b"};border:1px solid ${index === current ? "#67e8f9" : "#ffffff22"};">${key}</span>`).join("");
-    this.challengeEl.innerHTML = `<div style="font-size:12px;color:#facc15;font-weight:900;letter-spacing:.08em;">OFFICE SKILL CHECK · ${seconds}s</div><div style="font-size:13px;margin-top:3px;">${title}</div><div>${keys}</div><div style="font-size:11px;color:#94a3b8;">Wrong key makes noise and reveals your position</div>`;
+    this.challengeEl.innerHTML = `<div style="font-size:12px;color:#facc15;font-weight:900;letter-spacing:.08em;">${t("hud.skillCheck", { sec: seconds })}</div><div style="font-size:13px;margin-top:3px;">${title}</div><div>${keys}</div><div style="font-size:11px;color:#94a3b8;">${t("hud.skillCheckWrong")}</div>`;
   }
 
   // Seeker's equivalent of the hider mission panel — reuses the same corner
@@ -251,25 +254,26 @@ export class GameHud {
   setSeekerMission(visible: boolean, traceCooldownSec = 0) {
     this.missionsEl.style.display = visible ? "block" : "none";
     if (!visible) return;
+    const status = traceCooldownSec > 0 ? t("hud.traceCooldown", { sec: traceCooldownSec }) : t("hud.traceReady");
     this.missionsEl.innerHTML =
-      `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">SEEKER MISSION</div>` +
-      `<div style="color:#94a3b8;margin-bottom:7px;">Hiders cannot see this.</div>` +
-      `<div style="margin:4px 0;color:${traceCooldownSec > 0 ? "#94a3b8" : "#e2e8f0"};">◆ Trace Terminal (Reception): ${traceCooldownSec > 0 ? `READY IN ${traceCooldownSec}s` : "READY — press SPACE to reveal hiders for 10s"}</div>` +
-      `<div style="margin:8px 0 4px;color:#e2e8f0;">F — Scan nearby hidden hiders (15s cooldown)</div>`;
+      `<div style="font-size:13px;font-weight:900;letter-spacing:.08em;color:#facc15;margin-bottom:3px;">${t("hud.seekerMissionTitle")}</div>` +
+      `<div style="color:#94a3b8;margin-bottom:7px;">${t("hud.seekerMissionHidden")}</div>` +
+      `<div style="margin:4px 0;color:${traceCooldownSec > 0 ? "#94a3b8" : "#e2e8f0"};">${t("hud.traceLine", { status })}</div>` +
+      `<div style="margin:8px 0 4px;color:#e2e8f0;">${t("hud.scanLine")}</div>`;
   }
 
   setBlackout(active: boolean, timeRemaining: number) {
     this.blackoutEl.style.display = active ? "flex" : "none";
     if (active) {
       (this.blackoutEl.firstElementChild as HTMLDivElement).innerHTML =
-        `${icon("blocked", { size: 26 })}<br/>Hider กำลังหาที่ซ่อน...<br/><br/>อีก ${timeRemaining} วิ`;
+        `${icon("blocked", { size: 26 })}<br/>${t("hud.blackout")}<br/><br/>${t("hud.blackoutRemaining", { sec: timeRemaining })}`;
     }
   }
 
   showRoleBanner(role: string) {
     const child = this.roleBannerEl.firstElementChild as HTMLDivElement;
-    if (role === "seeker") child.innerHTML = `${icon("seeker", { size: 32, color: "#22d3ee" })} คุณคือคนหา!`;
-    else if (role === "hider") child.innerHTML = `${icon("hider", { size: 32, color: "#fbbf24" })} คุณคือคนซ่อน!`;
+    if (role === "seeker") child.innerHTML = `${icon("seeker", { size: 32, color: "#22d3ee" })} ${t("hud.roleSeeker")}`;
+    else if (role === "hider") child.innerHTML = `${icon("hider", { size: 32, color: "#fbbf24" })} ${t("hud.roleHider")}`;
     else child.textContent = role;
     this.roleBannerEl.style.display = "flex";
     clearTimeout(this.roleBannerTimeout);

@@ -13,6 +13,8 @@ import { setSfxMuted } from "./audio/sfx";
 import { icon } from "./dom/icons";
 import { preloadCharacterModels } from "./loaders/characterModels";
 import { preloadFurnitureModels } from "./loaders/furnitureModels";
+import { getLang, setLang } from "./i18n/lang";
+import { t } from "./i18n/strings";
 
 // Kicked off once here, as early as possible (menu screen has plenty of time
 // while the player types a nickname) — every later consumer (menu preview,
@@ -79,6 +81,22 @@ muteBtn.addEventListener("click", () => {
   renderMuteButton(muted);
 });
 document.body.appendChild(muteBtn);
+
+// Language toggle — most players are Thai-speaking and a lot of the newer
+// gameplay text ("Office Chaos" events, mission challenges) is English-only,
+// which is exactly the gap this closes. Switching reloads the page rather
+// than trying to live-rebuild every already-mounted screen's DOM; the
+// reconnect-token flow below (and GameScreen's own onLeave reconnect) means
+// an in-progress match resumes right where it was, just in the new language.
+const langBtn = document.createElement("button");
+langBtn.style.cssText =
+  "position:fixed;bottom:24px;left:150px;z-index:999;font-size:12px;font-weight:800;background:#0a0f1cdd;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;";
+langBtn.innerHTML = `🌐<span>${t("lang.toggle")}</span>`;
+langBtn.addEventListener("click", () => {
+  setLang(getLang() === "th" ? "en" : "th");
+  window.location.reload();
+});
+document.body.appendChild(langBtn);
 
 function tick(dt: number, now: number) {
   TWEEN.update(now);

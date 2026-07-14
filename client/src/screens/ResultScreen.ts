@@ -4,6 +4,7 @@ import { createOverlay, removeOverlay } from "../dom/overlay";
 import type { GameState } from "../schema/GameState";
 import { playRoundWinSfx } from "../audio/sfx";
 import { icon, escapeHtml } from "../dom/icons";
+import { t } from "../i18n/strings";
 
 export class ResultScreen implements Screen {
   private navigate: Navigate;
@@ -36,13 +37,13 @@ export class ResultScreen implements Screen {
             <div style="width:26px;text-align:center;font-size:15px;">${rank}</div>
             <div style="flex:1;font-size:14px;color:#f1f5f9;display:flex;align-items:center;gap:5px;">${
               p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : ""
-            }${escapeHtml(p.nickname)}${p.isEscaped ? " 🚪 ESCAPED" : ""}${isMvp ? " " + icon("star", { size: 13, color: "#fbbf24" }) : ""}</div>
+            }${escapeHtml(p.nickname)}${p.isEscaped ? " " + t("result.escaped") : ""}${isMvp ? " " + icon("star", { size: 13, color: "#fbbf24" }) : ""}</div>
             <div style="font-weight:800;color:${isMvp ? "#fbbf24" : "#67e8f9"};font-size:15px;">${p.score} pts</div>
           </div>`;
       })
       .join("");
 
-    const actionHtml = `<div style="text-align:center;color:#94a3b8;font-size:13px;margin-top:10px;">${icon("hourglass", { size: 13 })} ROUND ${this.room.state.matchRound}/${this.room.state.roundsPerMatch} · พัก ${this.room.state.timeRemaining}s</div>`;
+    const actionHtml = `<div style="text-align:center;color:#94a3b8;font-size:13px;margin-top:10px;">${icon("hourglass", { size: 13 })} ${t("result.roundRest", { round: this.room.state.matchRound, total: this.room.state.roundsPerMatch, sec: this.room.state.timeRemaining })}</div>`;
 
     this.overlay = createOverlay();
     this.overlay.innerHTML = `
@@ -50,12 +51,12 @@ export class ResultScreen implements Screen {
         <div class="hns-title" style="font-size:32px;color:#fff;text-shadow:0 0 16px ${hiderWon ? "#4ade80" : "#22d3ee"};display:flex;align-items:center;justify-content:center;gap:10px;">
           ${
             hiderWon
-              ? icon("party", { size: 28, color: "#4ade80" }) + " Clock-Out Crew หนีสำเร็จ!"
-              : icon("seeker", { size: 28, color: "#22d3ee" }) + " ทีมหาชนะ!"
+              ? icon("party", { size: 28, color: "#4ade80" }) + " " + t("result.hiderWon")
+              : icon("seeker", { size: 28, color: "#22d3ee" }) + " " + t("result.seekerWon")
           }
         </div>
         <div class="hns-panel" style="display:flex;flex-direction:column;gap:6px;width:360px;">
-          <div class="hns-label" style="margin-bottom:2px;">คะแนนสะสม</div>
+          <div class="hns-label" style="margin-bottom:2px;">${t("result.scoreboard")}</div>
           ${rows}
           ${actionHtml}
         </div>

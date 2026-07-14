@@ -4,6 +4,7 @@ import { createOverlay, removeOverlay } from "../dom/overlay";
 import type { GameState } from "../schema/GameState";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import { icon, escapeHtml } from "../dom/icons";
+import { t } from "../i18n/strings";
 
 export class LobbyScreen implements Screen {
   private navigate: Navigate;
@@ -31,26 +32,26 @@ export class LobbyScreen implements Screen {
     this.overlay = createOverlay();
     this.overlay.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:14px;align-items:center;">
-        <div style="color:var(--text-dim);font-size:13px;font-weight:700;">รหัสห้อง</div>
+        <div style="color:var(--text-dim);font-size:13px;font-weight:700;">${t("lobby.roomCode")}</div>
         <span class="hns-code-pill" style="font-size:26px;">${this.room.state.roomCode}</span>
 
         <div class="hns-panel" style="display:flex;flex-direction:column;gap:16px;width:360px;color:#fff;text-align:center;margin-top:6px;">
-          <div class="hns-label" style="text-align:left;">ผู้เล่นในห้อง</div>
+          <div class="hns-label" style="text-align:left;">${t("lobby.playersInRoom")}</div>
           <div id="playerList" style="white-space:pre-line;font-size:14px;color:#dde3ea;min-height:110px;text-align:left;line-height:1.6;"></div>
 
           <div id="hostControls" style="display:none;flex-direction:column;gap:10px;text-align:left;">
-            <div class="hns-label">จำนวนคนหา (Seeker)</div>
+            <div class="hns-label">${t("lobby.seekerCount")}</div>
             <select id="seekerCount" class="hns-input"></select>
-            <div class="hns-label">MATCH LENGTH</div><select id="roundsCount" class="hns-input"><option value="3">3 ROUNDS</option><option value="5">5 ROUNDS</option></select>
-            <div style="display:flex;gap:8px;"><button id="addBotBtn" class="hns-btn hns-btn-secondary" style="flex:1;">+ ADD BOT</button><button id="removeBotBtn" class="hns-btn hns-btn-ghost" style="flex:1;">− BOT</button></div>
-            <button id="startBtn" class="hns-btn hns-btn-primary">${icon("play", { size: 15 })} เริ่มเกม</button>
+            <div class="hns-label">${t("lobby.matchLength")}</div><select id="roundsCount" class="hns-input"><option value="3">${t("lobby.rounds3")}</option><option value="5">${t("lobby.rounds5")}</option></select>
+            <div style="display:flex;gap:8px;"><button id="addBotBtn" class="hns-btn hns-btn-secondary" style="flex:1;">${t("lobby.addBot")}</button><button id="removeBotBtn" class="hns-btn hns-btn-ghost" style="flex:1;">${t("lobby.removeBot")}</button></div>
+            <button id="startBtn" class="hns-btn hns-btn-primary">${icon("play", { size: 15 })} ${t("lobby.start")}</button>
             <div id="startHint" style="color:#fbbf24;font-size:12px;text-align:center;min-height:16px;"></div>
           </div>
-          <button id="readyBtn" class="hns-btn hns-btn-secondary" style="display:none;">READY</button>
+          <button id="readyBtn" class="hns-btn hns-btn-secondary" style="display:none;">${t("lobby.ready")}</button>
           <div id="waiting" style="text-align:center;color:#94a3b8;font-size:14px;display:flex;align-items:center;justify-content:center;gap:6px;">${icon(
             "hourglass",
             { size: 14 }
-          )} รอ host เริ่มเกม...</div>
+          )} ${t("lobby.waitingHost")}</div>
         </div>
       </div>
     `;
@@ -117,19 +118,19 @@ export class LobbyScreen implements Screen {
     const me = this.room.state.players.get(this.room.sessionId);
 
     const isHost = !!me?.isHost;
-    const summary = this.room.state.matchComplete ? `<div style="color:#facc15;font-weight:900;margin-bottom:10px;">MATCH COMPLETE · FINAL SCORE</div>` : "";
-    this.listEl.innerHTML = summary + `${players.length}/${GAME_CONFIG.MAX_PLAYERS} joined<br/><br/>` + players.map((p) =>
+    const summary = this.room.state.matchComplete ? `<div style="color:#facc15;font-weight:900;margin-bottom:10px;">${t("lobby.matchComplete")}</div>` : "";
+    this.listEl.innerHTML = summary + `${t("lobby.joined", { count: players.length, max: GAME_CONFIG.MAX_PLAYERS })}<br/><br/>` + players.map((p) =>
       `<div style="display:flex;align-items:center;gap:7px;margin:5px 0;">
         <span style="flex:1;">${p.isHost ? icon("crown", { size: 13, color: "#fbbf24" }) : p.isBot ? "🤖" : "•"} ${escapeHtml(p.nickname)}</span>
-        <b style="font-size:11px;color:${p.isReady ? "#4ade80" : "#94a3b8"};">${this.room!.state.matchComplete ? `${p.score} PTS` : p.isBot ? "BOT" : p.isHost ? "HOST" : p.isReady ? "READY" : "WAITING"}</b>
-        ${isHost && !p.isHost ? `<button data-kick="${p.id}" class="hns-btn hns-btn-ghost" style="padding:3px 7px;font-size:10px;">KICK</button>` : ""}
+        <b style="font-size:11px;color:${p.isReady ? "#4ade80" : "#94a3b8"};">${this.room!.state.matchComplete ? t("lobby.pts", { score: p.score }) : p.isBot ? t("lobby.bot") : p.isHost ? t("lobby.host") : p.isReady ? t("lobby.readyTag") : t("lobby.waitingTag")}</b>
+        ${isHost && !p.isHost ? `<button data-kick="${p.id}" class="hns-btn hns-btn-ghost" style="padding:3px 7px;font-size:10px;">${t("lobby.kick")}</button>` : ""}
       </div>`).join("");
 
     this.hostControlsEl!.style.display = isHost ? "flex" : "none";
     this.waitingEl!.style.display = isHost ? "none" : "block";
     this.readyBtn!.style.display = isHost ? "none" : "block";
     if (!isHost) {
-      this.readyBtn!.textContent = me?.isReady ? "✓ READY" : "READY";
+      this.readyBtn!.textContent = me?.isReady ? t("lobby.readyChecked") : t("lobby.ready");
       this.readyBtn!.className = `hns-btn ${me?.isReady ? "hns-btn-primary" : "hns-btn-secondary"}`;
     }
     if (!isHost) return;
@@ -138,12 +139,16 @@ export class LobbyScreen implements Screen {
     const wanted = Array.from({ length: max }, (_, i) => String(i + 1));
     const current = Array.from(this.seekerSelect!.options).map((o) => o.value);
     if (current.join(",") !== wanted.join(",")) {
-      this.seekerSelect!.innerHTML = wanted.map((v) => `<option value="${v}">${v} คน</option>`).join("");
+      this.seekerSelect!.innerHTML = wanted.map((v) => `<option value="${v}">${t("lobby.personCount", { n: v })}</option>`).join("");
     }
 
     const waitingPlayers = players.filter((player) => !player.isBot && !player.isHost && !player.isReady);
     const canStart = players.length >= GAME_CONFIG.MIN_PLAYERS && waitingPlayers.length === 0;
     this.startBtn!.disabled = !canStart;
-    this.startHintEl!.textContent = canStart ? "ทุกคนพร้อมแล้ว" : waitingPlayers.length ? `รอ ${waitingPlayers.length} คนกด READY` : `ต้องมีผู้เล่นอย่างน้อย ${GAME_CONFIG.MIN_PLAYERS} คน`;
+    this.startHintEl!.textContent = canStart
+      ? t("lobby.allReady")
+      : waitingPlayers.length
+        ? t("lobby.waitingForReady", { n: waitingPlayers.length })
+        : t("lobby.needMorePlayers", { n: GAME_CONFIG.MIN_PLAYERS });
   }
 }

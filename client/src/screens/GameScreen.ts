@@ -68,6 +68,7 @@ import {
 } from "../textures/proceduralTextures";
 import { createReactionTexture } from "../textures/emote";
 import { icon, escapeHtml, EMOTE_ICON_NAMES } from "../dom/icons";
+import { t } from "../i18n/strings";
 import { LocalPlayer3D } from "../entities3d/LocalPlayer3D";
 import { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
 import { Character3D } from "../entities3d/Character3D";
@@ -115,12 +116,12 @@ function screenForPhase(phase: string): string {
 }
 
 function propHintText(kind: RoomPropDef["kind"]): string {
-  if (kind === "whiteboard") return "[SPACE] เขียนกระดานหลอกคนหา";
-  if (kind === "coffee-machine") return "[SPACE] ดื่มกาแฟ (เร็วขึ้นชั่วคราว)";
-  if (kind === "light-switch") return "[SPACE] เปิด/ปิดไฟห้องนี้";
-  if (kind === "toilet-use") return "[SPACE] เข้าห้องน้ำ";
-  if (kind === "trace-terminal") return "[SPACE] เทรซสัญญาณ (เห็นตำแหน่งคนซ่อนทุกคน 10 วิ)";
-  return "[SPACE] แอบดูจอมอนิเตอร์";
+  if (kind === "whiteboard") return t("prop.whiteboard");
+  if (kind === "coffee-machine") return t("prop.coffee");
+  if (kind === "light-switch") return t("prop.lightSwitch");
+  if (kind === "toilet-use") return t("prop.toilet");
+  if (kind === "trace-terminal") return t("prop.trace");
+  return t("prop.monitor");
 }
 
 const WALL_HEIGHT = 60;
@@ -567,7 +568,7 @@ export class GameScreen implements Screen {
 
     const players = [...this.room.state.players.values()];
     this.hud.setInfo(
-      `ห้อง: ${this.room.state.roomCode}  |  รอบ ${this.room.state.round}  |  Phase: ${phase.toUpperCase()} (${timeRemaining}s)<br/>` +
+      t("game.infoBar", { code: this.room.state.roomCode, round: this.room.state.round, phase: phase.toUpperCase(), sec: timeRemaining }) + "<br/>" +
         players
           .map(
             (p) =>
@@ -638,21 +639,21 @@ export class GameScreen implements Screen {
     this.unsubs.push(offRole);
 
     const offCaught = room.onMessage("caught", (msg: CaughtMessage) => {
-      this.hud?.showFeedback(`${icon("scared", { size: 18 })} คุณถูก ${escapeHtml(msg.byNickname)} จับได้แล้ว!`);
+      this.hud?.showFeedback(`${icon("scared", { size: 18 })} ${t("feedback.caught", { name: escapeHtml(msg.byNickname) })}`);
       playCaughtSfx();
       if (this.localPlayer) this.playCatchEffect(this.localPlayer.character.position, 0xff5252);
     });
     this.unsubs.push(offCaught);
 
     const offCatchSuccess = room.onMessage("catchSuccess", (msg: CatchSuccessMessage) => {
-      this.hud?.showFeedback(`${icon("target", { size: 18 })} จับ ${escapeHtml(msg.targetNickname)} ได้! +${msg.points}`);
+      this.hud?.showFeedback(`${icon("target", { size: 18 })} ${t("feedback.catchSuccess", { name: escapeHtml(msg.targetNickname), points: msg.points })}`);
       playCatchSuccessSfx();
       if (this.localPlayer) this.playCatchEffect(this.localPlayer.character.position, 0xffe066);
     });
     this.unsubs.push(offCatchSuccess);
 
     const offInspectMiss = room.onMessage("inspectMiss", (msg: InspectMissMessage) => {
-      this.hud?.showFeedback(`${icon("x", { size: 18 })} ไม่มีใครซ่อนอยู่ที่นี่`, Math.min(1200, msg.cooldownMs));
+      this.hud?.showFeedback(`${icon("x", { size: 18 })} ${t("feedback.inspectMiss")}`, Math.min(1200, msg.cooldownMs));
       playInspectMissSfx();
     });
     this.unsubs.push(offInspectMiss);
@@ -677,14 +678,14 @@ export class GameScreen implements Screen {
       this.scene.add(character.group);
       const speed = 150;
       this.activeDecoys.push({ id: msg.id, character, vx: Math.sin(msg.rotY) * speed, vz: Math.cos(msg.rotY) * speed, expiresAt: performance.now() + msg.durationMs });
-      this.hud?.showFeedback("🤡 DECOY DEPLOYED — fake employee running!");
+      this.hud?.showFeedback(t("feedback.decoyDeployed"));
     });
     this.unsubs.push(offDecoySpawned);
 
     const offToiletUse = room.onMessage("toiletUse", (msg: ToiletUseMessage) => {
       this.getCharacterFor(msg.sessionId)?.playOneShot("sit", TOILET_USE_ANIM_MS);
       playToiletFlushSfx();
-      if (msg.sessionId === this.room?.sessionId) this.hud?.showFeedback(`${icon("check", { size: 18 })} สดชื่น!`);
+      if (msg.sessionId === this.room?.sessionId) this.hud?.showFeedback(`${icon("check", { size: 18 })} ${t("feedback.toiletRefreshed")}`);
     });
     this.unsubs.push(offToiletUse);
 
@@ -699,14 +700,14 @@ export class GameScreen implements Screen {
       playServerAlarmSfx();
     });
     const offCorporateEventEnd = room.onMessage("corporateEventEnd", () => {
-      this.hud?.showFeedback("✅ CORPORATE EVENT COMPLETE", 1000);
+      this.hud?.showFeedback(t("feedback.corporateEventComplete"), 1000);
     });
     const offPolicyReveal = room.onMessage("policyReveal", (msg: RevealPingMessage) => {
       this.playRevealBeacons(msg.points, msg.durationMs);
       playServerAlarmSfx();
     });
     const offPolicyViolation = room.onMessage("policyViolation", (msg: { reason: string }) => {
-      this.hud?.showFeedback(`🚨 POLICY VIOLATION: ${escapeHtml(msg.reason)}<br/>Office Patrol can see you!`, 2600);
+      this.hud?.showFeedback(t("feedback.policyViolation", { reason: escapeHtml(msg.reason) }), 2600);
       playCaughtSfx();
     });
     const offMissionChallenge = room.onMessage("missionChallenge", (msg: MissionChallengeMessage) => {
@@ -718,8 +719,8 @@ export class GameScreen implements Screen {
     });
     const offOfficePrank = room.onMessage("officePrank", (msg: OfficePrankMessage) => {
       this.playPaperBurst(msg.x, msg.y, msg.kind === "ghost" ? 0xa78bfa : msg.kind === "mission_fail" ? 0xef4444 : 0xffffff);
-      if (msg.kind === "ghost") this.hud?.showFeedback(`👻 ${escapeHtml(msg.nickname ?? "Office Ghost")} jammed the printer!`, 1500);
-      else if (msg.kind === "mission_fail") this.hud?.showFeedback(`💥 ${escapeHtml(msg.nickname ?? "Someone")} failed a task loudly!`, 1500);
+      if (msg.kind === "ghost") this.hud?.showFeedback(t("feedback.ghostPranked", { name: escapeHtml(msg.nickname ?? "Office Ghost") }), 1500);
+      else if (msg.kind === "mission_fail") this.hud?.showFeedback(t("feedback.missionFailedLoud", { name: escapeHtml(msg.nickname ?? "Someone") }), 1500);
       playSmokeDeploySfx();
     });
     const offGhostPrankCooldown = room.onMessage("ghostPrankCooldown", (msg: CooldownMessage) => {
@@ -749,52 +750,52 @@ export class GameScreen implements Screen {
       this.playRevealBeacons(msg.points, msg.durationMs);
       this.traceRevealPoints = msg.points;
       this.traceRevealUntil = performance.now() + msg.durationMs;
-      this.hud?.showFeedback(`${icon("target", { size: 18, color: "#facc15" })} เทรซสัญญาณสำเร็จ! เห็นตำแหน่งคนซ่อน ${msg.points.length} คน`);
+      this.hud?.showFeedback(`${icon("target", { size: 18, color: "#facc15" })} ${t("feedback.traceSuccess", { n: msg.points.length })}`);
     });
     this.unsubs.push(offTraceReveal);
 
     const offTraceCooldown = room.onMessage("traceCooldown", (msg: CooldownMessage) => {
       this.traceCooldownUntil = performance.now() + Math.max(0, msg.remainingMs);
       if (msg.remainingMs > 0 && msg.remainingMs < GAME_CONFIG.TRACE_COOLDOWN_MS)
-        this.hud?.showFeedback(`Trace Terminal พร้อมอีก ${Math.ceil(msg.remainingMs / 1000)} วิ`);
+        this.hud?.showFeedback(t("feedback.traceReadyIn", { sec: Math.ceil(msg.remainingMs / 1000) }));
     });
     const offHideCooldown = room.onMessage("hideCooldown", (msg: CooldownMessage) => {
       if (msg.coverPointId) this.personalHideCooldowns.set(msg.coverPointId, performance.now() + msg.remainingMs);
     });
     const offHideUnavailable = room.onMessage("hideUnavailable", () => {
-      this.hud?.showFeedback("เฟอร์นิเจอร์ชิ้นนี้ไม่ใช่จุดซ่อนในรอบนี้ — ลองจุดอื่น");
+      this.hud?.showFeedback(t("feedback.hideUnavailable"));
     });
     this.unsubs.push(offTraceCooldown, offHideCooldown, offHideUnavailable);
 
     const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
-      const labels: Record<string, string> = { smoke: "💨 Smoke Bomb", decoy: "🤡 Decoy", stun: "😵 Stun Trap", sprint: "⚡ Sprint" };
-      this.hud?.showFeedback(`ได้ ${labels[msg.item] ?? msg.item}!`);
+      const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint") };
+      this.hud?.showFeedback(t("feedback.itemPicked", { item: labels[msg.item] ?? msg.item }));
     });
     this.unsubs.push(offItemPicked);
 
     const offStunned = room.onMessage("stunned", () => {
-      this.hud?.showFeedback("💫 โดนกับดักมึน!");
+      this.hud?.showFeedback(t("feedback.stunned"));
     });
     this.unsubs.push(offStunned);
 
     const offSurvivalBonus = room.onMessage("survivalBonus", (msg: { points: number }) => {
-      this.hud?.showFeedback(`รอดครบ 60 วิ +${msg.points}`);
+      this.hud?.showFeedback(t("feedback.survivalBonus", { points: msg.points }));
     });
     this.unsubs.push(offSurvivalBonus);
 
     const offMissionComplete = room.onMessage("missionComplete", (msg: { title: string; nickname: string; points: number }) => {
-      this.hud?.showFeedback(`✅ ${escapeHtml(msg.nickname)} completed ${escapeHtml(msg.title)} +${msg.points}`);
+      this.hud?.showFeedback(t("feedback.missionCompleteBy", { name: escapeHtml(msg.nickname), title: escapeHtml(msg.title), points: msg.points }));
     });
     const offAllMissions = room.onMessage("allMissionsComplete", (msg: { points: number; timeReduced: number }) => {
-      this.hud?.showFeedback(`🚪 EXIT UNLOCKED! ไปที่ประตู Reception · +${msg.points}`, 3200);
+      this.hud?.showFeedback(t("feedback.exitUnlocked", { points: msg.points }), 3200);
     });
     this.unsubs.push(offMissionComplete, offAllMissions);
 
     const offEscaped = room.onMessage("escaped", (msg: { points: number }) => {
-      this.hud?.showFeedback(`✅ CLOCKED OUT! หนีสำเร็จ +${msg.points}`, 3000);
+      this.hud?.showFeedback(t("feedback.clockedOut", { points: msg.points }), 3000);
     });
     const offPlayerEscaped = room.onMessage("playerEscaped", (msg: { nickname: string }) => {
-      this.hud?.showFeedback(`🚪 ${escapeHtml(msg.nickname)} escaped the office!`, 1800);
+      this.hud?.showFeedback(t("feedback.playerEscaped", { name: escapeHtml(msg.nickname) }), 1800);
     });
     this.unsubs.push(offEscaped, offPlayerEscaped);
 
@@ -816,18 +817,18 @@ export class GameScreen implements Screen {
     this.unsubs.push(offTrapPlaced, offTrapRemoved);
 
     const offServerAlarm = room.onMessage("serverAlarm", (_msg: ServerAlarmMessage) => {
-      this.hud?.showFeedback(`${icon("bell", { size: 18, color: "#f87171" })} มีคนหาเข้าห้อง Server!`);
+      this.hud?.showFeedback(`${icon("bell", { size: 18, color: "#f87171" })} ${t("feedback.serverAlarm")}`);
       playServerAlarmSfx();
     });
     this.unsubs.push(offServerAlarm);
 
     const offWrongRoomHint = room.onMessage("wrongRoomHint", (msg: WrongRoomHintMessage) => {
-      this.hud?.showFeedback(`${icon("eyes", { size: 18, color: "#fbbf24" })} มีคนเห็นคนซ่อนที่ ${msg.roomName}!`);
+      this.hud?.showFeedback(`${icon("eyes", { size: 18, color: "#fbbf24" })} ${t("feedback.wrongRoomHint", { room: msg.roomName })}`);
     });
     this.unsubs.push(offWrongRoomHint);
 
     const offMonitorPeek = room.onMessage("monitorPeek", (msg: MonitorPeekMessage) => {
-      this.hud?.showFeedback(`${icon("target", { size: 18, color: "#22d3ee" })} คนหาอยู่ที่: ${msg.roomName}`);
+      this.hud?.showFeedback(`${icon("target", { size: 18, color: "#22d3ee" })} ${t("feedback.monitorPeek", { room: msg.roomName })}`);
     });
     this.unsubs.push(offMonitorPeek);
 
@@ -1273,10 +1274,10 @@ export class GameScreen implements Screen {
     if (phase !== "hide" && phase !== "seek") return null;
     if (me.isCaught) {
       const seconds = Math.ceil(Math.max(0, this.ghostPrankCooldownUntil - performance.now()) / 1000);
-      return seconds > 0 ? `👻 Ghost Prank ready in ${seconds}s · [C] switch survivor camera` : "[Q] GHOST PRANK · fake a noisy printer alert  |  [C] spectate survivor";
+      return seconds > 0 ? t("hint.ghostPrankReady", { sec: seconds }) : t("hint.ghostPrankUse");
     }
 
-    if (me.role === "hider" && me.isHidden) return "[SPACE] ออกจากที่ซ่อน";
+    if (me.role === "hider" && me.isHidden) return t("hint.leaveHiding");
 
     const lightSwitch = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, LIGHT_SWITCH_KIND);
     if (lightSwitch) return propHintText(lightSwitch.kind);
@@ -1286,35 +1287,35 @@ export class GameScreen implements Screen {
 
     if (me.role === "hider") {
       const exit = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, EXIT_GATE_KIND);
-      if (exit) return this.room.state.exitUnlocked ? "[SPACE] CLOCK OUT — หนีออกจาก Office" : "EXIT LOCKED — ทำ Mission ให้ครบก่อน";
+      if (exit) return this.room.state.exitUnlocked ? t("hint.clockOut") : t("hint.exitLockedDoMissions");
       const mission = this.findNearbyMission();
       if (mission) {
-        if (this.missionInteractionId === mission.id) return "Match the WASD sequence shown above";
-        return `[E] START SKILL CHECK · ${mission.title}`;
+        if (this.missionInteractionId === mission.id) return t("hint.matchSequence");
+        return t("hint.startSkillCheck", { title: mission.title });
       }
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) return propHintText(prop.kind);
-      if (me.heldItem) return "[Q] ใช้ไอเท็มที่ถืออยู่";
+      if (me.heldItem) return t("hint.useItem");
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
       if (!cp) return null;
       const hideCooldownSec = Math.ceil(Math.max(0, (this.personalHideCooldowns.get(cp.id) ?? 0) - performance.now()) / 1000);
-      if (hideCooldownSec > 0) return `จุดนี้พร้อมสำหรับคุณอีก ${hideCooldownSec} วิ`;
-      return cp.isOccupied ? "จุดนี้มีคนซ่อนอยู่แล้ว" : "[SPACE] ซ่อนที่นี่";
+      if (hideCooldownSec > 0) return t("hint.hideCooldown", { sec: hideCooldownSec });
+      return cp.isOccupied ? t("hint.spotOccupied") : t("hint.hideHere");
     }
 
     if (me.role === "seeker") {
-      if (this.findNearestExposedHider(GAME_CONFIG.TAG_RANGE_PX)) return "[SPACE] จับ!";
+      if (this.findNearestExposedHider(GAME_CONFIG.TAG_RANGE_PX)) return t("hint.tagNow");
       const trace = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, TRACE_TERMINAL_KIND);
       if (trace) {
         const seconds = Math.ceil(Math.max(0, this.traceCooldownUntil - performance.now()) / 1000);
-        return seconds > 0 ? `Trace Terminal พร้อมอีก ${seconds} วิ` : propHintText(trace.kind);
+        return seconds > 0 ? t("feedback.traceReadyIn", { sec: seconds }) : propHintText(trace.kind);
       }
       const cp = this.findNearestCoverPoint(GAME_CONFIG.INSPECT_RANGE_PX);
-      if (cp) return me.inspectsRemaining > 0 ? "[SPACE] ตรวจจุดนี้" : `${icon("blocked", { size: 14 })} หมดโควตาตรวจแล้ว`;
+      if (cp) return me.inspectsRemaining > 0 ? t("hint.inspectHere") : `${icon("blocked", { size: 14 })} ${t("hint.inspectOut")}`;
       // Fallback reminder — scan has no fixed location (unlike trace
       // terminal), so without this a seeker standing in open floor would
       // never see any hint that F does something at all.
-      return "[F] สแกนหาคนซ่อนในรัศมี (cooldown 15 วิ)";
+      return t("hud.scanLine");
     }
 
     return null;
@@ -1398,15 +1399,15 @@ export class GameScreen implements Screen {
       const exit = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, EXIT_GATE_KIND);
       if (exit) {
         if (this.room?.state.exitUnlocked) this.room.send("useProp", { propId: exit.id });
-        else this.hud?.showFeedback("EXIT LOCKED — ทำ Office Missions ให้ครบก่อน");
+        else this.hud?.showFeedback(t("hint.exitLockedDoMissions"));
         return;
       }
       const prop = this.findNearestUsableProp(GAME_CONFIG.ROOM_PROP_RANGE_PX, ACTIVE_PROP_KINDS);
       if (prop) {
         this.room?.send("useProp", { propId: prop.id });
-        if (prop.kind === "whiteboard") this.hud?.showFeedback(`${icon("target", { size: 18 })} หลอกคนหาด้วยกระดานแล้ว!`);
+        if (prop.kind === "whiteboard") this.hud?.showFeedback(`${icon("target", { size: 18 })} ${t("feedback.whiteboardDecoySuccess")}`);
         else if (prop.kind === "coffee-machine")
-          this.hud?.showFeedback(`${icon("run", { size: 18, color: "#4ade80" })} ดื่มกาแฟ! เร็วขึ้นชั่วคราว`);
+          this.hud?.showFeedback(`${icon("run", { size: 18, color: "#4ade80" })} ${t("feedback.coffeeBoost")}`);
         return;
       }
       const cp = this.findNearestCoverPoint(GAME_CONFIG.HIDE_RANGE_PX);
@@ -1414,7 +1415,7 @@ export class GameScreen implements Screen {
         if ((this.personalHideCooldowns.get(cp.id) ?? 0) > performance.now()) return;
         this.room?.send("hide", { coverPointId: cp.id });
         if (this.room?.state.relocateActive)
-          this.hud?.showFeedback(`${icon("check", { size: 18 })} ย้ายที่ซ่อนสำเร็จ! +${GAME_CONFIG.SCORE.RELOCATE_BONUS}`);
+          this.hud?.showFeedback(`${icon("check", { size: 18 })} ${t("feedback.relocateSuccess", { points: GAME_CONFIG.SCORE.RELOCATE_BONUS })}`);
       }
       return;
     }
@@ -1433,7 +1434,7 @@ export class GameScreen implements Screen {
       }
 
       if (me.inspectsRemaining <= 0) {
-        this.hud?.showFeedback(`${icon("blocked", { size: 18 })} หมดจำนวนครั้งตรวจแล้ว!`);
+        this.hud?.showFeedback(`${icon("blocked", { size: 18 })} ${t("feedback.inspectQuotaExhausted")}`);
         return;
       }
       const cp = this.findNearestCoverPoint(GAME_CONFIG.INSPECT_RANGE_PX);
@@ -1605,14 +1606,15 @@ export class GameScreen implements Screen {
       .map(([id]) => id);
     if (ids.length === 0) {
       this.cameraTargetPlayerId = "__none__";
-      this.hud?.showFeedback("👥 No active Hider teammates to view");
+      this.hud?.showFeedback(t("feedback.noTeammates"));
       return;
     }
     this.teammateCameraCursor = (this.teammateCameraCursor + 1) % ids.length;
     this.cameraTargetPlayerId = ids[this.teammateCameraCursor];
     this.teammateCameraUntil = spectator ? Number.POSITIVE_INFINITY : performance.now() + 4000;
     const teammate = this.room.state.players.get(this.cameraTargetPlayerId);
-    this.hud?.showFeedback(`👁 ${spectator ? "SPECTATING" : "CAMERA"}: ${escapeHtml(teammate?.nickname ?? "teammate")}${spectator ? " · C to switch" : " · 4s"}`);
+    const name = escapeHtml(teammate?.nickname ?? "teammate");
+    this.hud?.showFeedback(spectator ? t("feedback.camSpectating", { name }) : t("feedback.camPreview", { name }));
   }
 
   private buildWayfinding() {

@@ -3,6 +3,7 @@ import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import type { RemotePlayer3D } from "../entities3d/RemotePlayer3D";
 import { MISSION_POOL } from "../../../shared/missions";
 import { ROOM_PROPS } from "../../../shared/mapLayout";
+import { t } from "../i18n/strings";
 
 // Derived from MAP_WIDTH:MAP_HEIGHT's actual ratio (no longer a fixed 4:3 —
 // the PART 1 final-polish gap-compression pass in mapLayout.ts compresses
@@ -37,7 +38,7 @@ export class Minimap {
       "position:fixed;z-index:7;border-radius:10px;border:2px solid rgba(255,255,255,0.35);background:#141a24;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.35);";
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext("2d")!;
-    this.canvas.title = "คลิกเพื่อขยาย/ย่อแผนที่ (M)";
+    this.canvas.title = t("minimap.toggleHint");
     this.canvas.addEventListener("click", this.toggle);
     this.backdrop.addEventListener("click", this.collapse);
 
