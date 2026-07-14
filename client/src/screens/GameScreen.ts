@@ -19,7 +19,7 @@ import {
 } from "../../../shared/mapLayout";
 import { MAP_WIDTH, MAP_HEIGHT } from "../../../shared/mapConfig";
 import { NetworkManager } from "../network/NetworkManager";
-import { loadReconnectToken, clearReconnectToken } from "../network/reconnect";
+import { loadReconnectToken, clearReconnectToken, consumeIntentionalReload } from "../network/reconnect";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import type {
   CharacterAppearance,
@@ -842,6 +842,10 @@ export class GameScreen implements Screen {
     // instead of dumping the player at the Menu, where a fresh join would
     // just get rejected anyway once the match isn't in "lobby" phase anymore.
     const roomLeaveHandler = (code: number) => {
+      // A deliberate reload (language toggle) is about to tear this page
+      // down anyway — let the fresh page's own boot() be the only thing
+      // that reconnects, instead of racing it for the same one-time token.
+      if (consumeIntentionalReload()) return;
       if (code === 1000) {
         this.navigate("Menu");
         return;

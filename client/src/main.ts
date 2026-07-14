@@ -7,7 +7,7 @@ import { MenuScreen } from "./screens/MenuScreen";
 import { LobbyScreen } from "./screens/LobbyScreen";
 import { ResultScreen } from "./screens/ResultScreen";
 import { NetworkManager } from "./network/NetworkManager";
-import { loadReconnectToken, clearReconnectToken } from "./network/reconnect";
+import { loadReconnectToken, clearReconnectToken, markIntentionalReload } from "./network/reconnect";
 import { musicPlayer } from "./audio/music";
 import { setSfxMuted } from "./audio/sfx";
 import { icon } from "./dom/icons";
@@ -86,14 +86,29 @@ document.body.appendChild(muteBtn);
 // gameplay text ("Office Chaos" events, mission challenges) is English-only,
 // which is exactly the gap this closes. Switching reloads the page rather
 // than trying to live-rebuild every already-mounted screen's DOM; the
-// reconnect-token flow below (and GameScreen's own onLeave reconnect) means
-// an in-progress match resumes right where it was, just in the new language.
+// reconnect-token flow below (and GameScreen's/LobbyScreen's own onLeave
+// handlers) means an in-progress match resumes right where it was, just in
+// the new language. markIntentionalReload() tells those onLeave handlers to
+// skip their own reconnect attempt so they don't race boot()'s reconnect on
+// the freshly-loaded page for the same one-time token (see reconnect.ts).
+// Deliberately a tiny icon-only badge tucked in the very corner (not a
+// labeled pill like the mute button) — the landing page's own nav bar and,
+// in-game, the help button + minimap all already claim most of that top-right
+// real estate at various screen widths. The only slice of that corner that's
+// free on every screen is the sliver between the very edge and the in-game
+// help button (which starts ~24px in), so this has to stay small and hug the
+// edge rather than sit further out where it looks more "centered" in the
+// corner.
 const langBtn = document.createElement("button");
 langBtn.style.cssText =
-  "position:fixed;bottom:24px;left:150px;z-index:999;font-size:12px;font-weight:800;background:#0a0f1cdd;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;";
-langBtn.innerHTML = `🌐<span>${t("lang.toggle")}</span>`;
+  "position:fixed;top:20px;right:2px;z-index:999;width:20px;height:20px;font-size:11px;line-height:1;background:#0a0f1c8a;color:#fff;border:1px solid #ffffff1a;border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0.55;transition:opacity .15s;";
+langBtn.textContent = "🌐";
+langBtn.title = t("lang.toggle");
+langBtn.addEventListener("mouseenter", () => (langBtn.style.opacity = "1"));
+langBtn.addEventListener("mouseleave", () => (langBtn.style.opacity = "0.55"));
 langBtn.addEventListener("click", () => {
   setLang(getLang() === "th" ? "en" : "th");
+  markIntentionalReload();
   window.location.reload();
 });
 document.body.appendChild(langBtn);

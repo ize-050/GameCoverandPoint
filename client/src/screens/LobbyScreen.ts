@@ -5,6 +5,7 @@ import type { GameState } from "../schema/GameState";
 import { GAME_CONFIG } from "../../../shared/gameConstants";
 import { icon, escapeHtml } from "../dom/icons";
 import { t } from "../i18n/strings";
+import { consumeIntentionalReload } from "../network/reconnect";
 
 export class LobbyScreen implements Screen {
   private navigate: Navigate;
@@ -88,7 +89,13 @@ export class LobbyScreen implements Screen {
 
     this.room.onStateChange(this.stateChangeHandler);
     this.unsubs.push(() => this.room?.onStateChange.remove(this.stateChangeHandler));
-    const roomLeaveHandler = () => this.navigate("Menu");
+    const roomLeaveHandler = () => {
+      // See GameScreen's roomLeaveHandler — a deliberate reload (language
+      // toggle) tears this page down right after this fires anyway, so skip
+      // navigating and let the fresh page's boot() reconnect cleanly.
+      if (consumeIntentionalReload()) return;
+      this.navigate("Menu");
+    };
     this.room.onLeave(roomLeaveHandler);
     this.unsubs.push(() => this.room?.onLeave.remove(roomLeaveHandler));
 
