@@ -279,6 +279,24 @@ function shrinkRect<T extends { x: number; y: number }>(rect: T): T {
 function shrinkPoint<T extends { x: number; y: number }>(p: T): T {
   return { ...p, x: remapX(p.x), y: remapY(p.y) };
 }
+// shrinkRect only remaps a rect's start corner, which is exact ONLY when the
+// whole rect's span sits inside a single identity band (true for room boxes,
+// since bandsX/bandsY are derived from those very boxes). A freestanding
+// wall segment has no such guarantee — it can start inside a compressed gap
+// and end inside a room's band (or vice versa), so leaving w/h at the
+// pre-remap scaled value silently stretches it: the far end no longer lines
+// up with the now-compressed geometry around it, which was previously
+// leaving several standalone partition walls rendered far longer than
+// intended and pinching corridors down to less-than-player-width gaps.
+// Remapping both corners and re-deriving w/h from the difference keeps the
+// wall's true endpoints correct regardless of which band(s) it crosses.
+function shrinkWallRect(rect: WallRect): WallRect {
+  const x1 = remapX(rect.x);
+  const y1 = remapY(rect.y);
+  const x2 = remapX(rect.x + rect.w);
+  const y2 = remapY(rect.y + rect.h);
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
 // Cluster helper: translates every wall/bay-center in a cubicle cluster by
 // ONE shared delta (from the cluster's own origin) rather than remapping
 // each corner independently — a cluster can straddle a gap/band boundary
@@ -324,14 +342,40 @@ const STANDALONE_WALLS_RAW: WallRect[] = [
 // divider walls and each bay's center point (for a cover point to sit at).
 // Thinner than a structural room wall (8 vs 20) since these read as fabric
 // cubicle screens, not building walls.
+//
+// `bayGapPx` (raw units, pre-MAP_SCALE) cuts a centered opening into every
+// interior divider instead of leaving it full-span. The "reachable from two
+// outward-facing sides" guarantee above only holds when the cluster sits in
+// open floor with clearance on every side — when one is instead boxed inside
+// a room's own walls (WORK_A_DESKS/WORK_B_DESKS), a full-span divider seals
+// off whichever rows/columns the room's doors don't happen to open directly
+// into, with no way to walk around it internally. Found live: Work Zone A's
+// bottom cubicle row (holding 2 of its 6 cover points) was completely
+// unreachable — confirmed by scanning every point along its dividers for a
+// slide-through gap and finding none. 70 raw units (~45px post-MAP_SCALE,
+// safely over the 32px two-player-radii minimum) reopens a real walking gap
+// without touching the freestanding clusters that never needed one.
 const CUBICLE_PARTITION_THICKNESS = 8;
-function cubicleBlock(originX: number, originY: number, cols: number, rows: number, cellW: number, cellH: number) {
+function cubicleBlock(originX: number, originY: number, cols: number, rows: number, cellW: number, cellH: number, bayGapPx = 0) {
   const walls: WallRect[] = [];
+  function withGap(fullStart: number, fullLen: number, build: (start: number, len: number) => WallRect) {
+    if (bayGapPx <= 0 || bayGapPx >= fullLen) {
+      walls.push(build(fullStart, fullLen));
+      return;
+    }
+    const gapStart = fullStart + fullLen / 2 - bayGapPx / 2;
+    if (gapStart > fullStart) walls.push(build(fullStart, gapStart - fullStart));
+    const afterGap = gapStart + bayGapPx;
+    const end = fullStart + fullLen;
+    if (end > afterGap) walls.push(build(afterGap, end - afterGap));
+  }
   for (let r = 1; r < rows; r++) {
-    walls.push({ x: originX, y: originY + r * cellH - CUBICLE_PARTITION_THICKNESS / 2, w: cols * cellW, h: CUBICLE_PARTITION_THICKNESS });
+    const y = originY + r * cellH - CUBICLE_PARTITION_THICKNESS / 2;
+    withGap(originX, cols * cellW, (start, len) => ({ x: start, y, w: len, h: CUBICLE_PARTITION_THICKNESS }));
   }
   for (let c = 1; c < cols; c++) {
-    walls.push({ x: originX + c * cellW - CUBICLE_PARTITION_THICKNESS / 2, y: originY, w: CUBICLE_PARTITION_THICKNESS, h: rows * cellH });
+    const x = originX + c * cellW - CUBICLE_PARTITION_THICKNESS / 2;
+    withGap(originY, rows * cellH, (start, len) => ({ x, y: start, w: CUBICLE_PARTITION_THICKNESS, h: len }));
   }
   const bayCenters: { x: number; y: number }[] = [];
   for (let r = 0; r < rows; r++) {
@@ -354,9 +398,11 @@ const CUBICLE_C = cubicleBlock(5000, 3300, 2, 2, 200, 160);
 
 // Work Zone A/B's own in-room cubicle clusters — the spec calls for
 // "6 desks in a grid + partition" per work zone, which is exactly what
-// cubicleBlock() already produces.
-const WORK_A_DESKS = cubicleBlock(390, 1980, 2, 3, 280, 280);
-const WORK_B_DESKS = cubicleBlock(420, 3140, 3, 2, 280, 280);
+// cubicleBlock() already produces. These two are boxed in by their room's
+// own walls (unlike the freestanding NW/NE/SW/SE/C clusters below), so they
+// get an explicit bayGapPx — see cubicleBlock's comment for why that matters.
+const WORK_A_DESKS = cubicleBlock(390, 1980, 2, 3, 280, 280, 70);
+const WORK_B_DESKS = cubicleBlock(420, 3140, 3, 2, 280, 280, 70);
 
 // PART 1 gap-shrink: each cluster gets ONE rigid translation (see
 // shrinkCubicleCluster) instead of per-rect remapping, so its internal
@@ -375,7 +421,7 @@ export const WALLS: WallRect[] = [
   // equivalent to shrinking the wall output — and this way door gaps stay
   // aligned with the shrunk room box).
   ...ROOMS.flatMap(buildRoomWalls),
-  ...STANDALONE_WALLS_RAW.map(scaleWallRect).map(shrinkRect),
+  ...STANDALONE_WALLS_RAW.map(scaleWallRect).map(shrinkWallRect),
   ...CUBICLE_NW_S.walls,
   ...CUBICLE_NE_S.walls,
   ...CUBICLE_SW_S.walls,
