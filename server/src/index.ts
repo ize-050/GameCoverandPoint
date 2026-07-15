@@ -16,7 +16,7 @@ app.use(express.json());
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    release: "supabase-progression-v15",
+    release: "office-coffee-toss-v16",
     minPlayers: GAME_CONFIG.MIN_PLAYERS,
     supabase: getSupabaseStatus(),
   })
