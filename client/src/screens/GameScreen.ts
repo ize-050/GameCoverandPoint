@@ -42,6 +42,7 @@ import type {
   CorporateEventMessage,
   MissionChallengeMessage,
   OfficePrankMessage,
+  CoffeeThrownMessage,
 } from "../../../shared/messages";
 import { MISSION_POOL } from "../../../shared/missions";
 import {
@@ -777,10 +778,23 @@ export class GameScreen implements Screen {
     this.unsubs.push(offTraceCooldown, offHideCooldown, offHideUnavailable);
 
     const offItemPicked = room.onMessage("itemPicked", (msg: ItemPickedMessage) => {
-      const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint") };
+      const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint"), coffee: t("item.coffee") };
       this.hud?.showFeedback(t("feedback.itemPicked", { item: labels[msg.item] ?? msg.item }));
     });
-    this.unsubs.push(offItemPicked);
+    const offCoffeeThrown = room.onMessage("coffeeThrown", (msg: CoffeeThrownMessage) => {
+      this.playCoffeeThrow(msg);
+      playSmokeDeploySfx();
+    });
+    const offCoffeeWait = room.onMessage("coffeeWait", () => this.hud?.showFeedback(t("feedback.coffeeWait"), 1600));
+    const offCoffeeHit = room.onMessage("coffeeHit", () => {
+      this.hud?.showFeedback(t("feedback.coffeeHit"), 1800);
+      playCaughtSfx();
+    });
+    const offCoffeeHitConfirm = room.onMessage("coffeeHitConfirm", (msg: { nickname: string }) => {
+      this.hud?.showFeedback(t("feedback.coffeeHitConfirm", { name: escapeHtml(msg.nickname) }), 1800);
+      playCatchSuccessSfx();
+    });
+    this.unsubs.push(offItemPicked, offCoffeeThrown, offCoffeeWait, offCoffeeHit, offCoffeeHitConfirm);
 
     const offStunned = room.onMessage("stunned", () => {
       this.hud?.showFeedback(t("feedback.stunned"));
@@ -1037,6 +1051,95 @@ export class GameScreen implements Screen {
         })
         .start();
     });
+  }
+
+  // A readable, deliberately exaggerated office-party projectile. The path
+  // and hit were already resolved by the server; this tween is visual only.
+  private playCoffeeThrow(msg: CoffeeThrownMessage) {
+    const cup = new THREE.Group();
+    const paper = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.78 });
+    const coffee = new THREE.MeshStandardMaterial({ color: 0x5b2c12, roughness: 0.9 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 3.7, 9, 12), paper);
+    const drink = new THREE.Mesh(new THREE.CylinderGeometry(3.7, 3.7, 0.8, 12), coffee);
+    drink.position.y = 4.5;
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(3, 0.85, 6, 12, Math.PI * 1.5), paper);
+    handle.position.set(4.2, 0.5, 0);
+    handle.rotation.y = Math.PI / 2;
+    cup.add(body, drink, handle);
+    cup.position.set(msg.fromX, 24, msg.fromY);
+    cup.scale.setScalar(1.35);
+    this.scene.add(cup);
+
+    const distance = Math.hypot(msg.toX - msg.fromX, msg.toY - msg.fromY);
+    const duration = THREE.MathUtils.clamp(distance * 2.15, 260, 560);
+    new TWEEN.Tween({ t: 0 })
+      .to({ t: 1 }, duration)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .onUpdate(({ t }) => {
+        cup.position.set(
+          THREE.MathUtils.lerp(msg.fromX, msg.toX, t),
+          24 + Math.sin(t * Math.PI) * 50,
+          THREE.MathUtils.lerp(msg.fromY, msg.toY, t),
+        );
+        cup.rotation.x += 0.22;
+        cup.rotation.z += 0.3;
+      })
+      .onComplete(() => {
+        this.scene.remove(cup);
+        cup.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+          child.geometry.dispose();
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => material.dispose());
+        });
+        this.playCoffeeSplash(msg.toX, msg.toY, Boolean(msg.hitSeekerId));
+      })
+      .start();
+  }
+
+  private playCoffeeSplash(x: number, z: number, hit: boolean) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(7, 14, 24),
+      new THREE.MeshBasicMaterial({ color: hit ? 0xf59e0b : 0x92400e, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 2.5, z);
+    this.scene.add(ring);
+    const droplets: THREE.Mesh[] = [];
+    for (let i = 0; i < 9; i++) {
+      const droplet = new THREE.Mesh(
+        new THREE.SphereGeometry(1.8 + Math.random() * 1.5, 6, 4),
+        new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? 0xfbbf24 : 0x78350f, transparent: true, opacity: 0.95 }),
+      );
+      droplet.position.set(x, 5, z);
+      this.scene.add(droplet);
+      droplets.push(droplet);
+    }
+    const state = { t: 0, opacity: 0.9 };
+    new TWEEN.Tween(state)
+      .to({ t: 1, opacity: 0 }, 650)
+      .easing(TWEEN.Easing.Cubic.Out)
+      .onUpdate(() => {
+        ring.scale.setScalar(1 + state.t * (hit ? 3.6 : 2.4));
+        (ring.material as THREE.MeshBasicMaterial).opacity = state.opacity;
+        droplets.forEach((droplet, i) => {
+          const angle = (i / droplets.length) * Math.PI * 2;
+          const radius = state.t * (28 + (i % 3) * 7);
+          droplet.position.set(x + Math.cos(angle) * radius, 5 + Math.sin(state.t * Math.PI) * (16 + i), z + Math.sin(angle) * radius);
+          (droplet.material as THREE.MeshBasicMaterial).opacity = state.opacity;
+        });
+      })
+      .onComplete(() => {
+        this.scene.remove(ring);
+        ring.geometry.dispose();
+        (ring.material as THREE.Material).dispose();
+        droplets.forEach((droplet) => {
+          this.scene.remove(droplet);
+          droplet.geometry.dispose();
+          (droplet.material as THREE.Material).dispose();
+        });
+      })
+      .start();
   }
 
   // Smoke bomb puff — a handful of soft gray spheres billowing outward and
@@ -1585,7 +1688,7 @@ export class GameScreen implements Screen {
       this.heldItemSprite = undefined;
       this.heldItemVisualKind = item;
       if (item) {
-        const emoji: Record<string, string> = { smoke: "💨", decoy: "🤡", stun: "⚠️", sprint: "⚡" };
+        const emoji: Record<string, string> = { smoke: "💨", decoy: "🤡", stun: "⚠️", sprint: "⚡", coffee: "☕" };
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = 96;
         const ctx = canvas.getContext("2d")!;

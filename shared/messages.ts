@@ -156,9 +156,17 @@ export interface SmokeDeployedMessage {
   y: number;
 }
 
-export type ItemKind = "smoke" | "decoy" | "stun" | "sprint";
+export type ItemKind = "smoke" | "decoy" | "stun" | "sprint" | "coffee";
 export interface ItemPickedMessage { item: ItemKind }
 export interface TrapMessage { id: string; x: number; y: number }
+export interface CoffeeThrownMessage {
+  id: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  hitSeekerId?: string;
+}
 
 // server -> the triggering seeker only (private one-shot snapshot, never a
 // live/continuous exposure) — hidden hiders caught within the scan/trace

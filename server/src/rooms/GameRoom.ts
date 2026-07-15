@@ -36,6 +36,7 @@ import { MISSION_POOL, MISSIONS_PER_ROUND, ACTIVE_MISSIONS, MISSION_SCORE, ALL_M
 import { decideDisconnectAction } from "./reconnectPolicy.js";
 import { persistMatchResults, verifySupabaseAccessToken, type AuthUser, type MatchResultRecord } from "../auth/supabaseAuth.js";
 import { calculateProgressReward } from "../progression/rewards.js";
+import { resolveCoffeeThrow } from "../gameplay/coffeeThrow.js";
 
 const BOT_TICK_MS = Math.round(1000 / GAME_CONFIG.MOVE_RATE_HZ);
 // ~0.8s of sidestepping once a bot commits to a detour (see resolveBotStep) —
@@ -110,6 +111,7 @@ export class GameRoom extends Room<GameState> {
   private toiletUseCooldownUntil = new Map<string, number>();
   private firstCatchAwarded = false;
   private itemCooldownUntil = new Map<string, number>();
+  private dazeUntil = new Map<string, number>();
   private stunTraps: Array<{ id: string; x: number; y: number; ownerId: string }> = [];
   private survivalMilestones = new Set<number>();
   private missionCooldownUntil = new Map<string, number>();
@@ -649,7 +651,8 @@ export class GameRoom extends Room<GameState> {
       }
       const dx = target.x - bot.x;
       const dy = target.y - bot.y;
-      const speed = bot.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
+      const baseSpeed = bot.role === "seeker" ? GAME_CONFIG.SEEKER_SPEED : GAME_CONFIG.HIDER_SPEED;
+      const speed = bot.isDazed ? baseSpeed * GAME_CONFIG.SMOKE_DAZE_SPEED_MULTIPLIER : baseSpeed;
       const waypoint = this.nextBotWaypoint(bot, target);
       const resolved = this.resolveBotStep(bot, waypoint, speed, dt);
       const moved = Math.hypot(resolved.x - bot.x, resolved.y - bot.y);
@@ -787,6 +790,7 @@ export class GameRoom extends Room<GameState> {
     this.monitorCooldownUntil.delete(client.sessionId);
     this.toiletUseCooldownUntil.delete(client.sessionId);
     this.itemCooldownUntil.delete(client.sessionId);
+    this.dazeUntil.delete(client.sessionId);
     this.missionCooldownUntil.delete(client.sessionId);
     this.missionStartedAt.delete(client.sessionId);
     this.scanCooldownUntil.delete(client.sessionId);
@@ -896,6 +900,7 @@ export class GameRoom extends Room<GameState> {
     this.monitorCooldownUntil.clear();
     this.toiletUseCooldownUntil.clear();
     this.itemCooldownUntil.clear();
+    this.dazeUntil.clear();
     this.missionCooldownUntil.clear();
     this.missionStartedAt.clear();
     this.scanCooldownUntil.clear();
@@ -1079,7 +1084,7 @@ export class GameRoom extends Room<GameState> {
       if (Math.hypot(player.x - spawn.x, player.y - spawn.y) > GAME_CONFIG.SMOKE_PICKUP_RANGE_PX) continue;
       this.state.collectedSmokeItems.set(spawn.id, true);
       const roll = Math.random();
-      const item: ItemKind = roll < 0.30 ? "smoke" : roll < 0.60 ? "decoy" : roll < 0.85 ? "stun" : "sprint";
+      const item: ItemKind = roll < 0.25 ? "smoke" : roll < 0.50 ? "decoy" : roll < 0.70 ? "stun" : roll < 0.85 ? "sprint" : "coffee";
       player.heldItem = item;
       player.hasSmokeBomb = item === "smoke";
       this.clients.find((c) => c.sessionId === player.id)?.send("itemPicked", { item });
@@ -1120,10 +1125,16 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.role !== "hider" || player.isCaught || player.isHidden || !player.heldItem) return;
     if (this.state.phase !== "hide" && this.state.phase !== "seek") return;
+    const item = player.heldItem as ItemKind;
+    // Throwing during HIDE would reveal the protected Hider position. Keep
+    // the cup in hand and privately ask its owner to wait for the chase.
+    if (item === "coffee" && this.state.phase !== "seek") {
+      client.send("coffeeWait");
+      return;
+    }
     const now = Date.now();
     if (now < (this.itemCooldownUntil.get(client.sessionId) ?? 0)) return;
     this.itemCooldownUntil.set(client.sessionId, now + GAME_CONFIG.ITEM_USE_COOLDOWN_MS);
-    const item = player.heldItem as ItemKind;
     player.heldItem = "";
     player.hasSmokeBomb = false;
     if (item === "smoke") this.deploySmoke(player);
@@ -1144,7 +1155,44 @@ export class GameRoom extends Room<GameState> {
         if (i >= 0) this.stunTraps.splice(i, 1);
         this.broadcastToHiders("trapRemoved", { id: trap.id });
       }, GAME_CONFIG.STUN_TRAP_LIFETIME_MS);
+    } else if (item === "coffee") {
+      this.throwCoffee(client, player, now);
     }
+  }
+
+  private throwCoffee(client: Client, player: Player, now: number) {
+    const seekers = [...this.state.players.values()]
+      .filter((target) => target.role === "seeker" && !target.isCaught)
+      .map((target) => ({ id: target.id, x: target.x, y: target.y }));
+    const result = resolveCoffeeThrow(
+      { x: player.x, y: player.y }, player.rotY, seekers,
+      (x, y) => collidesWithAnyWall(x, y, 5),
+      GAME_CONFIG.COFFEE_THROW_DISTANCE_PX,
+      GAME_CONFIG.COFFEE_THROW_HIT_RADIUS_PX,
+    );
+    this.broadcast("coffeeThrown", {
+      id: `coffee-${client.sessionId}-${now}`,
+      fromX: result.from.x, fromY: result.from.y,
+      toX: result.to.x, toY: result.to.y,
+      hitSeekerId: result.hitTargetId,
+    });
+    if (!result.hitTargetId) return;
+    const target = this.state.players.get(result.hitTargetId);
+    if (!target) return;
+    this.applyDaze(target, GAME_CONFIG.COFFEE_THROW_DAZE_DURATION_MS);
+    this.clients.find((candidate) => candidate.sessionId === target.id)?.send("coffeeHit", { durationMs: GAME_CONFIG.COFFEE_THROW_DAZE_DURATION_MS });
+    client.send("coffeeHitConfirm", { nickname: target.nickname });
+  }
+
+  private applyDaze(target: Player, durationMs: number) {
+    const until = Math.max(this.dazeUntil.get(target.id) ?? 0, Date.now() + durationMs);
+    this.dazeUntil.set(target.id, until);
+    target.isDazed = true;
+    this.clock.setTimeout(() => {
+      if ((this.dazeUntil.get(target.id) ?? 0) > Date.now()) return;
+      this.dazeUntil.delete(target.id);
+      target.isDazed = false;
+    }, durationMs);
   }
 
   private handleStartMission(client: Client, message: { missionId?: string }) {
@@ -1622,10 +1670,7 @@ export class GameRoom extends Room<GameState> {
     this.state.players.forEach((target) => {
       if (target.role !== "seeker" || target.isCaught) return;
       if (Math.hypot(target.x - player.x, target.y - player.y) > GAME_CONFIG.SMOKE_BLAST_RADIUS_PX) return;
-      target.isDazed = true;
-      this.clock.setTimeout(() => {
-        target.isDazed = false;
-      }, GAME_CONFIG.SMOKE_DAZE_DURATION_MS);
+      this.applyDaze(target, GAME_CONFIG.SMOKE_DAZE_DURATION_MS);
     });
   }
 

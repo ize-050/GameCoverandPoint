@@ -208,12 +208,13 @@ export class GameHud {
   setHeldItem(item: string, visible: boolean) {
     this.itemEl.style.display = visible ? "block" : "none";
     if (!visible) return;
-    const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint") };
+    const labels: Record<string, string> = { smoke: t("item.smoke"), decoy: t("item.decoy"), stun: t("item.stun"), sprint: t("item.sprint"), coffee: t("item.coffee") };
     this.itemEl.textContent = item ? `${labels[item] ?? item} · ${t("hud.itemUseHint")}` : t("hud.itemSlotEmpty");
     this.itemEl.style.opacity = item ? "1" : "0.55";
     const styles: Record<string, string> = {
       smoke: "linear-gradient(135deg,#334155dd,#94a3b8dd)", decoy: "linear-gradient(135deg,#7c3aeddd,#ec4899dd)",
       stun: "repeating-linear-gradient(135deg,#713f12dd 0 8px,#eab308dd 8px 16px)", sprint: "linear-gradient(135deg,#075985dd,#22d3eedd)",
+      coffee: "linear-gradient(135deg,#78350fdd,#f59e0bdd)",
     };
     this.itemEl.style.background = styles[item] ?? "#0f172acc";
   }

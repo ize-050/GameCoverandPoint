@@ -57,6 +57,11 @@ export const GAME_CONFIG = {
   SMOKE_DAZE_DURATION_MS: 4000,
   SMOKE_DAZE_SPEED_MULTIPLIER: 0.55,
   ITEM_USE_COOLDOWN_MS: 3000,
+  // Scarce Hider party interaction. The server clips this trajectory against
+  // walls and validates the hit; clients only animate the confirmed result.
+  COFFEE_THROW_DISTANCE_PX: 240,
+  COFFEE_THROW_HIT_RADIUS_PX: 34,
+  COFFEE_THROW_DAZE_DURATION_MS: 2200,
   STUN_DURATION_MS: 2500,
   STUN_TRAP_LIFETIME_MS: 45000,
   STUN_TRAP_TRIGGER_RANGE_PX: 28,

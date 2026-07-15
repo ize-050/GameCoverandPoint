@@ -465,3 +465,16 @@ git status
 - เก็บ performance ตลอด Match ได้แก่ Hider/Seeker wins, escapes, catches และ missions; Render คำนวณ XP/Coins และเขียน Supabase หลังจบ 3/5 รอบ
 - หน้า Account Card แสดง Level, XP, จำนวนเกม และจำนวน Escape จากข้อมูลถาวรของบัญชี
 - เพิ่ม tests สำหรับ participation reward, score scaling และ level curve
+
+## Office Party Combat — Coffee Toss
+
+- เพิ่มไอเท็มสุ่ม `Hot Coffee` สำหรับ Hider เพื่อสร้างจังหวะปะทะและความฮาเมื่อเจอ Seeker แบบซึ่งหน้า
+- กด Q เพื่อขว้างแก้วไปตามทิศที่ตัวละครหัน ระยะ 240px; trajectory และ hit detection ตัดสินฝั่ง server
+- แก้วกาแฟชนกำแพงและไม่สามารถยิงทะลุห้องได้ โดยเลือกโดน Seeker คนแรกในแนวขว้างเท่านั้น
+- เมื่อโดน Seeker จะเกิด Coffee Splash, หน้าจอ/การเดินมีอาการลื่นและช้าลง 2.2 วินาที; Bot Seeker รับผลเดียวกัน
+- ปิดการขว้างในช่วง HIDE เพื่อไม่ให้ projectile เปิดเผยตำแหน่ง Hider ที่ server กำลังปกปิด โดยเก็บไอเท็มไว้จนเริ่ม SEEK
+- จำกัดด้วยระบบเดิม: ต้องเก็บ Gift Box, โอกาสสุ่ม 15%, ถือได้ครั้งละหนึ่งชิ้น และจุดไอเท็ม respawn 25 วินาที
+- เพิ่มโมเดลแก้วกาแฟ low-poly แบบ 3D, วิถีโค้ง/หมุนกลางอากาศ, splash ring และหยดกาแฟ พร้อม feedback สำหรับผู้ปาและผู้โดน
+- อัปเดต HUD, Help, Landing และคำแปลไทย/อังกฤษให้ผู้เล่นเห็นว่ากาแฟใช้ทำอะไร
+- เพิ่ม automated tests ครบกรณีปาโดนเป้าหมายแรก, ปาพลาด และกำแพงบัง; test server ผ่าน 12/12 และ client/server production build ผ่าน
+- รัน browser QA จริง: สร้างห้องกับ Office Bots, เริ่ม Match, ตรวจ Help/HUD และไม่พบ console error
