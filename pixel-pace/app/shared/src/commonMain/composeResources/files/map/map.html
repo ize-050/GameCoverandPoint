@@ -50,7 +50,8 @@
       map.panTo(p, { animate: true, duration: 0.25, easeLinearity: 1 });
     },
     appendTrail: function (lat, lng) { trail.addLatLng([lat, lng]); },
-    reset: function () { trail.setLatLngs([]); }
+    reset: function () { trail.setLatLngs([]); },
+    setTrail: function (pts) { trail.setLatLngs(pts); }
   };
 </script>
 </body>

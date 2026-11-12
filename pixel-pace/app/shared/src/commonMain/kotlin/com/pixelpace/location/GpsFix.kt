@@ -33,4 +33,7 @@ interface LocationProvider {
     /** begin delivering fixes to [onFix]; safe to call repeatedly */
     fun start(onFix: (GpsFix) -> Unit)
     fun stop()
+
+    /** adaptive GPS rate: ~1 s while moving, ~5 s when standing still. Default: ignore. */
+    fun setUpdateIntervalMs(ms: Long) {}
 }

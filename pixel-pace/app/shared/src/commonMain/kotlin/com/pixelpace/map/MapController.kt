@@ -1,6 +1,7 @@
 package com.pixelpace.map
 
 import com.pixelpace.location.GpsFix
+import com.pixelpace.location.TrackPoint
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -23,6 +24,12 @@ class MapController {
 
     fun clearTrail() {
         commands.trySend("PPMap.reset()")
+    }
+
+    /** replace the whole trail (used when the UI re-attaches to a run in progress) */
+    fun setTrail(points: List<TrackPoint>) {
+        val json = points.joinToString(prefix = "[", postfix = "]") { "[${it.lat},${it.lng}]" }
+        commands.trySend("PPMap.setTrail($json)")
     }
 }
 

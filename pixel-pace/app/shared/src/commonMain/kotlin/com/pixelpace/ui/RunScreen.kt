@@ -10,41 +10,60 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.pixelpace.location.RunTracker
+import com.pixelpace.location.RunFormat
+import com.pixelpace.location.RunHolder
+import com.pixelpace.location.RunState
+import com.pixelpace.location.RunStatus
 import com.pixelpace.location.rememberLocationPermission
 import com.pixelpace.location.rememberLocationProvider
+import com.pixelpace.location.rememberTrackingHost
 import com.pixelpace.map.LeafletMap
 import com.pixelpace.map.MapController
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
-private fun pad2(n: Long) = n.toString().padStart(2, '0')
-internal fun formatKm(m: Double): String { val c = (m / 10).toInt(); return "${c / 100}.${(c % 100).toString().padStart(2, '0')}" }
-internal fun formatTime(ms: Long): String { val s = ms / 1000; return "${pad2(s / 60)}:${pad2(s % 60)}" }
-internal fun formatPace(secPerKm: Int?): String = if (secPerKm == null) "--:--" else "${pad2(secPerKm / 60L)}:${pad2(secPerKm % 60L)}"
+private const val MOVING_INTERVAL_MS = 1_000L
+private const val STILL_INTERVAL_MS = 5_000L
 
-/** M3 run screen: live Leaflet map, GPS permission gate, distance / time / pace from filtered fixes. */
+/**
+ * M4 run screen. The run itself lives in [RunHolder.session] (process-wide), so it survives this
+ * screen leaving composition; on Android a foreground service keeps feeding it with the screen off.
+ */
 @Composable
 fun RunScreen() {
+    val session = RunHolder.session
+    val state by session.state.collectAsState()
     val permission = rememberLocationPermission()
     val provider = rememberLocationProvider()
-    val tracker = remember { RunTracker() }
+    val host = rememberTrackingHost()
     val map = remember { MapController() }
-    var state by remember { mutableStateOf(tracker.state) }
 
-    LaunchedEffect(permission.granted) {
-        if (!permission.granted) return@LaunchedEffect
-        provider.start { fix ->
-            val accepted = tracker.onFix(fix)
-            state = tracker.state
-            map.setPlayer(fix, state.running)
-            if (accepted) map.appendTrail(fix.lat, fix.lng)
+    // The UI listens to GPS unless a foreground service already owns it for the active run.
+    val uiOwnsGps = permission.granted && !(host.servicePowered && state.active)
+    LaunchedEffect(uiOwnsGps) {
+        if (!uiOwnsGps) { provider.stop(); return@LaunchedEffect }
+        provider.start { session.onFix(it) }
+        // adaptive GPS rate: 1 s while moving, 5 s when standing still
+        session.state.map { it.moving }.distinctUntilChanged().collect {
+            provider.setUpdateIntervalMs(if (it) MOVING_INTERVAL_MS else STILL_INTERVAL_MS)
+        }
+    }
+
+    // keep the map in sync with the session; replays the trail when the UI re-attaches mid-run
+    LaunchedEffect(Unit) {
+        map.setTrail(session.track)
+        var shown = session.track.size
+        session.state.collect { s ->
+            s.lastFix?.let { map.setPlayer(it, s.status == RunStatus.Running) }
+            if (s.pointCount < shown) { map.setTrail(session.track); shown = s.pointCount }
+            while (shown < s.pointCount) { session.track[shown].let { map.appendTrail(it.lat, it.lng) }; shown++ }
         }
     }
 
@@ -57,29 +76,64 @@ fun RunScreen() {
                 Column(Modifier.padding(top = 14.dp)) { PixelButton("ALLOW GPS", onClick = permission::request) }
             }
         } else {
-            val acc = state.lastFix?.accuracyM
-            Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
-                PixelTag(
-                    if (acc == null) "GPS: SEARCHING" else "GPS ±${acc.toInt()}m",
-                    if (acc == null) TagTone.Amber else if (acc <= 30f) TagTone.Lime else TagTone.Red,
-                )
-            }
-            PixelCard(modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Stat(formatKm(state.distanceM), "KM")
-                    Stat(formatTime(state.elapsedMs), "TIME")
-                    Stat(formatPace(state.paceSecPerKm), "PACE/KM")
+            GpsBadge(state, Modifier.align(Alignment.TopEnd).padding(12.dp))
+            ControlPanel(
+                state = state,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                onStart = { session.start(); map.clearTrail(); host.onRunStarted() },
+                onPause = { session.pause() },
+                onResume = { session.resume() },
+                onFinish = { session.finish(); host.onRunEnded() },
+            )
+            if (state.status == RunStatus.Finished) {
+                PixelModal("RUN COMPLETE", confirmLabel = "NEW RUN", onConfirm = { session.reset(); map.clearTrail() }) {
+                    PixelText("${RunFormat.km(state.distanceM)} km  ·  ${RunFormat.time(state.elapsedMs)}", size = 11, align = TextAlign.Center)
+                    PixelText("Avg pace ${RunFormat.pace(state.paceSecPerKm)} /km", color = PixelColors.InkDim, size = 8)
                 }
-                Column(Modifier.padding(top = 14.dp)) {
-                    if (state.running) {
-                        PixelButton("■ FINISH", Modifier.fillMaxWidth(), tone = PixelTone.Pink, fillWidth = true) {
-                            tracker.stop(); state = tracker.state
-                        }
-                    } else {
-                        PixelButton("▶ START RUN", Modifier.fillMaxWidth(), fillWidth = true) {
-                            tracker.start(); map.clearTrail(); state = tracker.state
-                        }
-                    }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GpsBadge(state: RunState, modifier: Modifier) {
+    val acc = state.lastFix?.accuracyM
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (state.status == RunStatus.Paused) PixelTag("PAUSED", TagTone.Amber)
+        else if (state.active && !state.moving) PixelTag("STANDING", TagTone.Neutral)
+        PixelTag(
+            if (acc == null) "GPS: SEARCHING" else "GPS ±${acc.toInt()}m",
+            if (acc == null) TagTone.Amber else if (acc <= 30f) TagTone.Lime else TagTone.Red,
+        )
+    }
+}
+
+@Composable
+private fun ControlPanel(
+    state: RunState,
+    modifier: Modifier,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    PixelCard(modifier = modifier) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Stat(RunFormat.km(state.distanceM), "KM")
+            Stat(RunFormat.time(state.elapsedMs), "TIME")
+            Stat(RunFormat.pace(state.paceSecPerKm), "PACE/KM")
+        }
+        Row(Modifier.padding(top = 14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (state.status) {
+                RunStatus.Idle, RunStatus.Finished ->
+                    PixelButton("▶ START RUN", Modifier.weight(1f), fillWidth = true, onClick = onStart)
+                RunStatus.Running -> {
+                    PixelButton("❚❚ PAUSE", Modifier.weight(1f), tone = PixelTone.Amber, fillWidth = true, onClick = onPause)
+                    PixelButton("■ FINISH", Modifier.weight(1f), tone = PixelTone.Pink, fillWidth = true, onClick = onFinish)
+                }
+                RunStatus.Paused -> {
+                    PixelButton("▶ RESUME", Modifier.weight(1f), fillWidth = true, onClick = onResume)
+                    PixelButton("■ FINISH", Modifier.weight(1f), tone = PixelTone.Pink, fillWidth = true, onClick = onFinish)
                 }
             }
         }

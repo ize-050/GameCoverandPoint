@@ -53,6 +53,15 @@ private class IosLocationProvider : LocationProvider {
         manager.delegate = delegate
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = kCLDistanceFilterNone
+        // keep recording with the screen off / app in background (needs UIBackgroundModes=location)
+        manager.allowsBackgroundLocationUpdates = true
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.showsBackgroundLocationIndicator = true
+    }
+
+    /** adaptive rate: when standing still only report moves of 5 m or more */
+    override fun setUpdateIntervalMs(ms: Long) {
+        manager.distanceFilter = if (ms >= 5_000) 5.0 else kCLDistanceFilterNone
     }
 
     override fun start(onFix: (GpsFix) -> Unit) {

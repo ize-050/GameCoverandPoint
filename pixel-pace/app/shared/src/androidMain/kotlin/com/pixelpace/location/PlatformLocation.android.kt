@@ -1,13 +1,8 @@
 package com.pixelpace.location
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
-import android.os.Looper
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -17,35 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-
-private class AndroidLocationProvider(context: Context) : LocationProvider {
-    private val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private var listener: LocationListener? = null
-
-    @SuppressLint("MissingPermission") // callers gate on rememberLocationPermission()
-    override fun start(onFix: (GpsFix) -> Unit) {
-        if (listener != null) return
-        val l = LocationListener { loc: Location ->
-            onFix(
-                GpsFix(
-                    lat = loc.latitude,
-                    lng = loc.longitude,
-                    accuracyM = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE,
-                    speedMps = if (loc.hasSpeed()) loc.speed else null,
-                    timeMs = loc.time,
-                ),
-            )
-        }
-        listener = l
-        // 1 s interval; adaptive rate (5 s when stopped) arrives with the run engine in M4
-        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1_000L, 0f, l, Looper.getMainLooper())
-    }
-
-    override fun stop() {
-        listener?.let { manager.removeUpdates(it) }
-        listener = null
-    }
-}
 
 @Composable
 actual fun rememberLocationProvider(): LocationProvider {
@@ -67,7 +33,13 @@ actual fun rememberLocationPermission(): LocationPermission {
         object : LocationPermission {
             override val granted = granted
             override fun request() {
-                launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                val wanted = buildList {
+                    add(Manifest.permission.ACCESS_FINE_LOCATION)
+                    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    // Android 13+: needed to show the "run in progress" notification of the tracking service
+                    if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                launcher.launch(wanted.toTypedArray())
             }
         }
     }

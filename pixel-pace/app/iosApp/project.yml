@@ -13,6 +13,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pixelpace.app
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIBackgroundModes: location
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Pixel Pace uses your location to track your run and place you on the map."
         FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         OTHER_LDFLAGS: ["-framework", "Shared"]
