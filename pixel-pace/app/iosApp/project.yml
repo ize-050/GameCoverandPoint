@@ -1,0 +1,24 @@
+# Generate the Xcode project with:  brew install xcodegen && xcodegen   (run inside iosApp/)
+name: PixelPace
+options:
+  bundleIdPrefix: com.pixelpace
+targets:
+  PixelPace:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources: [iosApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixelpace.app
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Pixel Pace uses your location to track your run and place you on the map."
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS: ["-framework", "Shared"]
+    preBuildScripts:
+      - name: Build Kotlin framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode

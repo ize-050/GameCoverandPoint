@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "client"],
       "port": 5173
+    },
+    {
+      "name": "pixel-pace",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5180", "--directory", "pixel-pace"],
+      "port": 5180
     }
   ]
 }

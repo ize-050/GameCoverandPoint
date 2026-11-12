@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>/*LEAFLET_CSS*/</style>
+<style>
+  html, body { margin: 0; height: 100%; background: #12351c; }
+  /* fixed (not height:100%) so the map always fills the WebView, whatever the body height resolves to */
+  #map { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: #12351c; }
+  .leaflet-control-container { display: none; }
+  /* retro look: dark + posterized tiles, like the HTML concept demo */
+  .leaflet-tile-pane { filter: invert(.93) hue-rotate(180deg) saturate(.8) brightness(.95) contrast(1.15) url(#posterize); }
+  .grid { position: fixed; inset: 0; z-index: 800; pointer-events: none;
+    background-image: linear-gradient(#00000026 2px, transparent 2px), linear-gradient(90deg, #00000026 2px, transparent 2px);
+    background-size: 8px 8px; }
+  .vig { position: fixed; inset: 0; z-index: 801; pointer-events: none; box-shadow: inset 0 0 90px #000c; }
+  .me { width: 22px; height: 22px; background: #7cff4f; border: 4px solid #05040d; box-shadow: 4px 4px 0 #000a, inset -4px -4px 0 #2f9d1a; }
+  .me.run { animation: bob .4s steps(2) infinite; }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><filter id="posterize" color-interpolation-filters="sRGB">
+  <feComponentTransfer>
+    <feFuncR type="discrete" tableValues="0 .25 .5 .75 1"/>
+    <feFuncG type="discrete" tableValues="0 .25 .5 .75 1"/>
+    <feFuncB type="discrete" tableValues="0 .25 .5 .75 1"/>
+  </feComponentTransfer></filter></svg>
+<div id="map"></div><div class="grid"></div><div class="vig"></div>
+<script>/*LEAFLET_JS*/</script>
+<script>
+  // Lumphini Park until the first GPS fix arrives
+  var map = L.map('map', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, touchZoom: false, keyboard: false }).setView([13.7313, 100.5414], 17);
+  var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+  tiles.on('tileerror', function () { console.log('tile error'); });
+  // the WebView is often laid out after this script runs: keep Leaflet in sync with its real size
+  new ResizeObserver(function () { map.invalidateSize(); }).observe(document.getElementById('map'));
+  var trail = L.polyline([], { color: '#7cff4f', weight: 7, opacity: .95, lineCap: 'square', lineJoin: 'miter' }).addTo(map);
+  var me = null;
+  var icon = L.divIcon({ className: '', html: '<div class="me" id="me"></div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+
+  // API called from Kotlin (see MapController)
+  window.PPMap = {
+    setPlayer: function (lat, lng, running) {
+      var p = [lat, lng];
+      if (!me) { me = L.marker(p, { icon: icon, zIndexOffset: 1000 }).addTo(map); } else { me.setLatLng(p); }
+      var el = document.getElementById('me'); if (el) el.classList.toggle('run', !!running);
+      map.panTo(p, { animate: true, duration: 0.25, easeLinearity: 1 });
+    },
+    appendTrail: function (lat, lng) { trail.addLatLng([lat, lng]); },
+    reset: function () { trail.setLatLngs([]); }
+  };
+</script>
+</body>
+</html>

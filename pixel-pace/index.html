@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0a1a">
+  <title>Pixel Pace — 8-Bit Running Adventure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- posterize filter: squashes OSM tiles into a retro 8-bit palette -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="posterize" color-interpolation-filters="sRGB">
+    <feComponentTransfer>
+      <feFuncR type="discrete" tableValues="0 .25 .5 .75 1"/>
+      <feFuncG type="discrete" tableValues="0 .25 .5 .75 1"/>
+      <feFuncB type="discrete" tableValues="0 .25 .5 .75 1"/>
+    </feComponentTransfer>
+  </filter>
+</svg>
+
+<main class="stage">
+
+  <!-- ===== desktop side panel ===== -->
+  <aside class="side">
+    <div class="brand">
+      <h1>PIXEL<br>PACE</h1>
+      <p>The 8-bit real-world running adventure.<br>Every meter you run is XP.</p>
+    </div>
+    <h3>ROADMAP</h3>
+    <ul class="road" id="road-side"></ul>
+    <p class="hint">Tap <b class="px" style="font-size:9px;color:var(--lime)">START RUN</b>, then open the pink
+      <b class="px" style="font-size:9px;color:var(--pink)">CHEAT</b> button to try an e-bike or a car and watch the anti-cheat react.</p>
+  </aside>
+
+  <!-- ===== phone ===== -->
+  <section class="phone" aria-label="Pixel Pace app demo">
+    <div class="statusbar"><span>PIXEL PACE</span><span id="clock">--:--</span></div>
+
+    <div class="screens">
+
+      <!-- MAP / RUN -->
+      <div class="screen active" id="screen-map">
+        <div id="map" aria-label="Run map"></div>
+        <div class="map-grid"></div><div class="map-vignette"></div>
+
+        <div class="hud-top">
+          <div class="hud-hero">
+            <canvas id="hud-avatar"></canvas>
+            <div class="grow">
+              <div class="lv" id="hud-lv">LV 4</div>
+              <div class="bar thin"><i id="hud-xpbar"></i></div>
+            </div>
+          </div>
+          <div class="hud-gold"><span class="coin-ico"></span><span id="hud-gold">0</span></div>
+        </div>
+
+        <div class="banner" id="banner"></div>
+        <button class="sim-toggle" id="sim-toggle" aria-label="Open cheat simulator">CHEAT</button>
+
+        <div class="hud-bottom" id="hud-bottom">
+          <div class="stats">
+            <div class="stat"><b id="s-dist">0.00</b><span>KM</span></div>
+            <div class="stat"><b id="s-time">00:00</b><span>TIME</span></div>
+            <div class="stat xp"><b id="s-xp">+0</b><span>XP</span></div>
+          </div>
+          <div class="controls" id="controls"></div>
+        </div>
+
+        <div class="sim-drawer" id="sim-drawer">
+          <div class="row between"><h3>CHEAT SIMULATOR</h3><button class="btn small ghost" id="sim-close">X</button></div>
+          <p>Pretend to move differently and see the verdict.</p>
+          <div class="mode-grid" id="mode-grid"></div>
+          <div class="seg" id="phase-seg">
+            <button data-phase="1">PHASE 1<br>MVP · GPS ONLY</button>
+            <button data-phase="2" class="on">PHASE 2<br>FULL TEV</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUESTS -->
+      <div class="screen" id="screen-quests">
+        <div class="scroll">
+          <div class="card"><h3>DAILY BOUNTIES <span class="tag amber">RESET 18:00</span></h3><div id="bounties"></div></div>
+          <div class="card"><h3>LOCATION QUESTS <span class="tag pink">LUMPHINI</span></h3><div id="locquests"></div></div>
+          <div class="card">
+            <h3>STORY CAMPAIGN <span class="tag cyan">CH.1</span></h3>
+            <div class="boss">
+              <canvas id="boss"></canvas>
+              <div class="name">THE BENJAKITTI WYRM<br><span class="dim" style="font-family:var(--font-body);font-size:18px">Run 5 km in total to defeat it</span></div>
+              <div class="bar pink"><i id="boss-hp"></i></div>
+              <div class="row between dim" style="margin-top:6px"><span id="boss-km">0 / 5 km</span><span>BOSS HP</span></div>
+            </div>
+            <div class="chain" id="chain"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEV -->
+      <div class="screen" id="screen-tev">
+        <div class="scroll">
+          <div class="verdict idle" id="verdict">TRUE-EFFORT<br>VERIFICATION<small>Start a run to see live checks</small></div>
+          <div class="card"><h3>5 VERIFICATION LAYERS <span class="tag cyan" id="tev-phase">PHASE 2</span></h3><div id="layers"></div></div>
+          <p class="dim" style="padding:0 4px">Open the CHEAT button on the map to switch between running, e-bike, scooter and car.</p>
+        </div>
+      </div>
+
+      <!-- HERO -->
+      <div class="screen" id="screen-hero">
+        <div class="scroll">
+          <div class="hero-stage"><div class="aura" id="aura"></div><canvas id="hero-canvas"></canvas></div>
+          <div class="hero-name" id="hero-name">PIXEL RUNNER</div>
+          <div class="hero-sub" id="hero-sub"></div>
+          <div class="card">
+            <h3>STATS</h3>
+            <div class="statrow"><span>STAMINA</span><div class="bar thin"><i id="st-sta"></i></div><span id="v-sta"></span></div>
+            <div class="statrow"><span>SPEED</span><div class="bar thin cyan"><i id="st-spd"></i></div><span id="v-spd"></span></div>
+            <div class="statrow"><span>LUCK</span><div class="bar thin amber"><i id="st-luk"></i></div><span id="v-luk"></span></div>
+          </div>
+          <div class="card">
+            <h3>CLOSET</h3>
+            <div class="slot-label">SNEAKER PIXELS</div><div class="slots" id="slots-shoes"></div>
+            <div class="slot-label">AURA</div><div class="slots" id="slots-aura"></div>
+            <div class="slot-label">AVATAR SPRITE</div><div class="slots" id="slots-sprite"></div>
+          </div>
+          <div class="card"><h3>BUILD PLAN</h3><ul class="road" id="road-hero"></ul></div>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+      <div class="modal" id="modal"><div class="modal-box" id="modal-box"></div></div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button data-screen="map" class="active"><svg viewBox="0 0 8 8"><path d="M1 0h6v1h1v5H7v1H6v1H2V7H1V6H0V1h1zm2 2v2h2V2z"/></svg>RUN</button>
+      <button data-screen="quests"><svg viewBox="0 0 8 8"><path d="M1 0h5v1h1v1h1v6H2V7H1zm1 2v1h4V2zm0 2v1h4V4z"/></svg>QUESTS<span class="dot" id="quest-dot"></span></button>
+      <button data-screen="tev"><svg viewBox="0 0 8 8"><path d="M0 1h8v4H7v1H6v1H5v1H3V7H2V6H1V5H0zm3 1v2h1V3h1V2z"/></svg>TEV</button>
+      <button data-screen="hero"><svg viewBox="0 0 8 8"><path d="M2 0h4v1h1v3H6v1h2v3H0V5h2V4H1V1h1z"/></svg>HERO</button>
+    </nav>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
